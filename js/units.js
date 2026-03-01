@@ -3,13 +3,13 @@
 // Mirrors Warcraft's Unit class + UnitController
 // ═══════════════════════════════════════════════════════════
 
-import { UNIT_DEFS, FAC } from './constants.js';
+import { UNIT_DEFS, FAC, COL, TILE } from './constants.js';
 import { G, getRes } from './state.js';
 import { Entity } from './entities.js';
 import { createUnitMesh, spawnParticles, syncMeshes, spawnProjectile } from './renderer.js';
-import { COL } from './constants.js';
-import { moveToward, findNearestEnemy, findNearest, findHQ, separateUnits, dist } from './world.js';
+import { moveToward, moveTo, findNearestEnemy, findNearest, findHQ, separateUnits, dist } from './world.js';
 import { sfxAttack, sfxHit, sfxDeath, sfxGather, sfxBuild } from './sfx.js';
+import { clearTrashTile, getTileType, harvestTrash, getTrashAmount, nearestTrashWithSalvage } from './terrain.js';
 
 export function spawnUnit(subtype, faction, x, z) {
   const def = UNIT_DEFS[subtype];
@@ -60,8 +60,9 @@ export function updateUnit(ent, dt) {
     case 'move': {
       if (ent.targetX !== null) {
         if (moveToward(ent, ent.targetX, ent.targetZ, 1.5, dt)) {
-          ent.state = 'idle';
+          ent.state   = 'idle';
           ent.targetX = null;
+          ent._path   = null;
         }
       } else {
         ent.state = 'idle';
@@ -69,7 +70,7 @@ export function updateUnit(ent, dt) {
       // Auto-aggro nearby enemies while moving (not workers)
       if (ent.subtype !== 'worker') {
         const enemy = findNearestEnemy(ent, 10);
-        if (enemy) { ent.targetEnt = enemy; ent.state = 'attacking'; }
+        if (enemy) { ent.targetEnt = enemy; ent.state = 'attacking'; ent._path = null; }
       }
       break;
     }
@@ -112,7 +113,12 @@ export function updateUnit(ent, dt) {
           else if (wasAlive) sfxHit();
         }
       } else {
-        moveToward(ent, tgt.x, tgt.z, ent.atkRange * 0.85, dt);
+        // Spread destination so units don’t all path to the same tile and get stuck
+        const radius = tgt.isBldg ? (tgt.size ?? 2) * TILE * 0.6 : 2;
+        const angle = (ent.id * 137.5 * Math.PI / 180) % (2 * Math.PI);
+        const destX = tgt.x + Math.cos(angle) * radius;
+        const destZ = tgt.z + Math.sin(angle) * radius;
+        moveToward(ent, destX, destZ, ent.atkRange * 0.85, dt);
       }
       break;
     }
@@ -120,6 +126,14 @@ export function updateUnit(ent, dt) {
     case 'gathering': {
       const res = ent.gatherTarget;
       if (!res || !res.alive) { ent.state = 'idle'; ent.gatherTarget = null; break; }
+
+      // SCAV workers: only gather Scrap from dumps — NOT salvage nodes (they use extracting for that)
+      // GILD workers: gather Scrap from dumps, Salvage from cafes/deptstores
+      if (ent.faction === FAC.SCAV &&
+          (res.subtype === 'cafe' || res.subtype === 'deptstore')) {
+        ent.state = 'idle'; ent.gatherTarget = null; break;
+      }
+
       if (moveToward(ent, res.x, res.z, 3.5, dt)) {
         ent.carriedRes    = ent.carryMax;
         ent.carriedType   = (res.subtype === 'deptstore' || res.subtype === 'cafe') ? 'salvage' : 'scrap';
@@ -131,11 +145,11 @@ export function updateUnit(ent, dt) {
     }
 
     case 'returning': {
-      const hq = findHQ(ent.faction);
-      if (!hq) { ent.state = 'idle'; break; }
-      const stopR = hq.size * 2 * 0.5 + 1.5;
-      if (moveToward(ent, hq.x, hq.z, stopR, dt)) {
-        // Deposit the correct resource
+      // Deposit point: Extractor (if one exists nearby) or HQ
+      const depot = _findDepot(ent);
+      if (!depot) { ent.state = 'idle'; break; }
+      const stopR = (depot.size ?? 2) * 2 * 0.5 + 1.5;
+      if (moveToward(ent, depot.x, depot.z, stopR, dt)) {
         const r = getRes(ent.faction);
         if (ent.carriedType === 'salvage') {
           r.salvage += ent.carriedRes;
@@ -148,12 +162,11 @@ export function updateUnit(ent, dt) {
         if (ent.gatherTarget?.alive) {
           ent.state = 'gathering';
         } else {
-          // Auto-find same resource type first, then any dump
           const prevType = ent.gatherTarget?.subtype;
           const nextRes = findNearest(ent,
             o => o.isRes && o.alive && (prevType ? o.subtype === prevType : o.subtype === 'dump'),
             120
-          ) || findNearest(ent, o => o.isRes && o.alive, 120);
+          ) || findNearest(ent, o => o.isRes && o.alive && o.subtype === 'dump', 120);
           if (nextRes) {
             ent.gatherTarget = nextRes;
             ent.state = 'gathering';
@@ -161,6 +174,70 @@ export function updateUnit(ent, dt) {
             ent.state = 'idle';
             ent.gatherTarget = null;
           }
+        }
+      }
+      break;
+    }
+
+    // ── Extracting: workers clear TRASH for scrap or salvage (2:1 scrap:salvage) ──
+    // Right-click TRASH → path there, extract, return to HQ (scrap) or Extractor/HQ (salvage).
+    case 'extracting': {
+      const et = ent.extractTarget;
+      if (!et) { ent.state = 'idle'; break; }
+
+      if (!ent._extractReady) {
+        if (moveToward(ent, et.wx, et.wz, TILE * 1.4, dt)) {
+          ent._extractReady = true;
+          ent._extractTimer = 0;
+        }
+        break;
+      }
+
+      ent._extractTimer = (ent._extractTimer ?? 0) + dt;
+      if (ent._extractTimer < 3.0) break;
+
+      const result = harvestTrash(et.tx, et.tz);
+      if (result.amount > 0) {
+        spawnParticles(et.wx, 1, et.wz, result.type === 'scrap' ? 0xe8a030 : 0xd4aa20, 8);
+        sfxGather();
+        ent.carriedRes   = result.amount;
+        ent.carriedType  = result.type;
+        ent._extractReady = false;
+        ent._extractTimer = 0;
+        ent.state = 'extract-return';
+      } else {
+        // Tile depleted — find next TRASH tile
+        const next = nearestTrashWithSalvage(ent.x, ent.z, 30);
+        if (next) {
+          ent.extractTarget = next;
+          ent._extractReady = false;
+          ent._extractTimer = 0;
+        } else {
+          ent.state = 'idle';
+          ent.extractTarget = null;
+        }
+      }
+      break;
+    }
+
+    case 'extract-return': {
+      const depot = _findDepot(ent);
+      if (!depot) { ent.state = 'idle'; break; }
+      const stopR = (depot.size ?? 2) * 2 * 0.5 + 1.5;
+      if (moveToward(ent, depot.x, depot.z, stopR, dt)) {
+        const r = getRes(ent.faction);
+        if (ent.carriedType === 'salvage') r.salvage += ent.carriedRes;
+        else r.scrap += ent.carriedRes;
+        ent.carriedRes  = 0;
+        ent.carriedType = null;
+
+        const et = ent.extractTarget;
+        if (et && getTrashAmount(et.tx, et.tz) > 0) {
+          ent.state = 'extracting';
+        } else {
+          const next = nearestTrashWithSalvage(ent.x, ent.z, 30);
+          if (next) { ent.extractTarget = next; ent.state = 'extracting'; }
+          else { ent.state = 'idle'; ent.extractTarget = null; }
         }
       }
       break;
@@ -183,10 +260,46 @@ export function updateUnit(ent, dt) {
       }
       break;
     }
+
+    // ── Trash-clearing: workers rummage TRASH tiles like WC2 lumber ──
+    case 'clearing': {
+      if (!ent.clearTarget) { ent.state = 'idle'; break; }
+      const ct = ent.clearTarget;
+      if (moveToward(ent, ct.wx, ct.wz, TILE * 1.2, dt)) {
+        // Adjacent — spend 2 s per tile (clearTimer counts down)
+        ent.clearTimer = (ent.clearTimer ?? 0) + dt;
+        if (ent.clearTimer >= 2.0) {
+          // Check the tile is still TRASH (another worker may have cleared it)
+          const T_TRASH = 4; // numeric value of T.TRASH in terrain constants
+          if (getTileType(ct.tx, ct.tz) === T_TRASH) {
+            const scrap = clearTrashTile(ct.tx, ct.tz);
+            getRes(ent.faction).scrap += scrap;
+            spawnParticles(ct.wx, 1, ct.wz, 0xaa7733, 10);
+            sfxGather();
+          }
+          ent.clearTimer = 0;
+          ent.clearTarget = null;
+          ent.state = 'idle';
+        }
+      }
+      break;
+    }
   }
 
   separateUnits(ent);
   syncMeshes(ent);
+}
+
+/** Find depot: scrap → HQ; salvage → Extractor (SCAV) or HQ. */
+function _findDepot(ent) {
+  if (ent.carriedType === 'salvage') {
+    const extractor = findNearest(ent,
+      o => o.alive && o.isBldg && o.subtype === 'extractor' && o.faction === ent.faction && !o.isBuilding,
+      200
+    );
+    if (extractor) return extractor;
+  }
+  return findHQ(ent.faction);
 }
 
 function _explode(ent) {

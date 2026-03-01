@@ -7,86 +7,96 @@ import { FAC, WORLD_W, WORLD_H } from './constants.js';
 import { config } from './config.js';
 import { G } from './state.js';
 import { renderer, camera, scene, resizeRenderer, updateParticles,
-         updateProjectiles, tickHealthBars, getGroundMesh } from './renderer.js';
+         updateProjectiles, tickHealthBars, tickTombstones, clearTombstones, getGroundMesh } from './renderer.js';
 import { initTerrain } from './terrain.js';
+import { initNavMesh } from './navmesh.js';
 import { MAP_GREAT_DIVIDE } from '../maps/great-divide.js';
+import { ALL_MAPS } from '../maps/index.js';
+import { getMapResources } from '../maps/utils.js';
+import { nearestTrashWithSalvage } from './terrain.js';
 import { spawnUnit }      from './units.js';
 import { spawnBuilding }  from './buildings.js';
 import { spawnResource }  from './resources.js';
 import { updateUnit }     from './units.js';
 import { updateBuilding } from './buildings.js';
 import { updateAI }       from './ai.js';
-import { updateHUD, updatePanel, drawMinimap } from './ui.js';
+import { updateHUD, updatePanel, drawMinimap, setStatusBar } from './ui.js';
 import { updateCamera }   from './input.js';
 
 // ── Map init ─────────────────────────────────────────────
+// Uses config.mapDef (set by lobby) or MAP_GREAT_DIVIDE. Supports 1–4 players:
+// starts[0] = player, starts[1..] = AI. Each base gets HQ, housing, workers; resources from map preset.
 function initMap() {
-  const MID  = WORLD_H / 2;
-  const pFac = config.playerFac;
-  const aFac = config.aiFac;
+  clearTombstones();
+  const mapDef = config.mapDef || MAP_GREAT_DIVIDE;
+  const pFac   = config.playerFac;
+  const aFac   = config.aiFac;
+  const starts = mapDef.starts || [];
+  // 1v1: spawn one base per faction (player + AI). For 4p later, use all starts.
+  const toSpawn = [
+    starts.find(s => s.faction === pFac),
+    starts.find(s => s.faction === aFac),
+  ].filter(Boolean);
 
-  // ── Terrain: load map tile data, paint ground, place 3D objects ──
-  initTerrain(MAP_GREAT_DIVIDE, getGroundMesh());
+  initTerrain(mapDef, getGroundMesh());
+  initNavMesh(); // Nav mesh = this map’s terrain + buildings; NPCs/players path on it
 
-  // ── Player base (left side) ───────────────────────────
-  const HQX = 26, HQZ = MID;
-  spawnBuilding('hq', pFac, HQX, HQZ, true);
-
-  spawnBuilding('housing', pFac, HQX - 10, HQZ - 10, true);
-  spawnBuilding('housing', pFac, HQX - 10, HQZ,      true);
-  spawnBuilding('housing', pFac, HQX - 10, HQZ + 10, true);
-  spawnBuilding('housing', pFac, HQX,       HQZ - 14, true);
-  spawnBuilding('housing', pFac, HQX,       HQZ + 14, true);
-  spawnBuilding('housing', pFac, HQX + 10,  HQZ - 14, true);
-
-  const startDump = spawnResource('dump', HQX + 20, HQZ, 2000);
-  const w1 = spawnUnit('worker', pFac, HQX + 10, HQZ - 2);
-  const w2 = spawnUnit('worker', pFac, HQX + 10, HQZ + 2);
-  const w3 = spawnUnit('worker', pFac, HQX + 10, HQZ + 6);
-  for (const w of [w1, w2, w3]) {
-    if (w && startDump) { w.gatherTarget = startDump; w.state = 'gathering'; }
+  const resources = getMapResources(mapDef);
+  for (const r of resources) {
+    spawnResource(r.type, r.wx, r.wz, r.amount ?? 1800);
   }
 
-  // ── AI base (right side) ──────────────────────────────
-  const AIX = WORLD_W - 30, AIZ = MID;
-  spawnBuilding('hq', aFac, AIX, AIZ, true);
+  for (const start of toSpawn) {
+    const { wx: HQX, wz: HQZ, faction } = start;
+    const isPlayer = faction === pFac;
+    const isAI    = faction === aFac;
+    const fac     = faction;
 
-  spawnBuilding('housing', aFac, AIX + 10, AIZ - 10, true);
-  spawnBuilding('housing', aFac, AIX + 10, AIZ,      true);
-  spawnBuilding('housing', aFac, AIX + 10, AIZ + 10, true);
-  spawnBuilding('housing', aFac, AIX,       AIZ - 14, true);
-  spawnBuilding('housing', aFac, AIX,       AIZ + 14, true);
-  spawnBuilding('housing', aFac, AIX - 10,  AIZ + 14, true);
+    spawnBuilding('hq', fac, HQX, HQZ, true);
 
-  // Gilded gather from Cafes; Scav AI uses dumps
-  const aiStartStore = spawnResource(aFac === FAC.GILD ? 'cafe' : 'dump', AIX - 20, AIZ, 2000);
-  // AI also gets a nearby dump so workers can gather scrap for unit production —
-  // without scrap income the barracks can't train fast enough.
-  const aiDump = spawnResource('dump', AIX - 24, AIZ + 12, 1500);
-  const aiW1 = spawnUnit('worker', aFac, AIX - 10, AIZ - 3);
-  const aiW2 = spawnUnit('worker', aFac, AIX - 10, AIZ + 3);
-  for (const w of [aiW1, aiW2]) {
-    if (w && aiStartStore) { w.gatherTarget = aiStartStore; w.state = 'gathering'; }
+    const off = fac === FAC.GILD ? 10 : -10;
+    spawnBuilding('housing', fac, HQX - 10, HQZ - 10, true);
+    spawnBuilding('housing', fac, HQX - 10, HQZ,      true);
+    spawnBuilding('housing', fac, HQX - 10, HQZ + 10, true);
+    spawnBuilding('housing', fac, HQX,       HQZ - 14, true);
+    spawnBuilding('housing', fac, HQX,       HQZ + 14, true);
+    spawnBuilding('housing', fac, HQX + off, HQZ - 14, true);
+
+    const workerCount = isAI ? 2 : 3;
+    const dx = fac === FAC.GILD ? -10 : 10;
+    const workers = [];
+    for (let k = 0; k < workerCount; k++)
+      workers.push(spawnUnit('worker', fac, HQX + dx, HQZ - 2 + k * 4));
+
+    // New model: prefer digging TRASH (path to enemy); mines give more but still burn out
+    const nearestTrash = nearestTrashWithSalvage(HQX, HQZ, 55);
+    const nearestRes = G.entities
+      .filter(e => e.alive && e.isRes && Math.hypot(e.x - HQX, e.z - HQZ) < 55)
+      .sort((a, b) => Math.hypot(a.x - HQX, a.z - HQZ) - Math.hypot(b.x - HQX, b.z - HQZ))[0];
+    for (const w of workers) {
+      if (!w) continue;
+      if (nearestTrash) {
+        w.extractTarget = nearestTrash;
+        w.state = 'extracting';
+      } else if (nearestRes) {
+        w.gatherTarget = nearestRes;
+        w.state = 'gathering';
+      }
+    }
   }
 
-  // ── Mid-map resource nodes ────────────────────────────
-  spawnResource('dump',      HQX + 44,          MID - 28, 1500);
-  spawnResource('dump',      HQX + 44,          MID + 28, 1500);
-  spawnResource('dump',      WORLD_W * 0.40,    MID,      1800);
-  spawnResource('dump',      WORLD_W * 0.40,    MID - 44, 1200);
-  spawnResource('dump',      WORLD_W * 0.40,    MID + 44, 1200);
-  spawnResource('dump',      30,                28,       1200);
-  spawnResource('dump',      30,                WORLD_H - 28, 1200);
-  // Contested Cafes in Gilded territory — Assistants naturally gather here,
-  // but Scav workers can loot them too if they push far enough.
-  spawnResource('cafe',      WORLD_W * 0.35,    MID - 20, 1200);
-  spawnResource('cafe',      WORLD_W * 0.35,    MID + 20, 1200);
-  spawnResource('cafe',      AIX - 44,          MID - 28, 1500);
-  spawnResource('cafe',      AIX - 44,          MID + 28, 1500);
+  const playerStart = starts.find(s => s.faction === pFac) || starts[0];
+  const camX = playerStart ? playerStart.wx + 8 : WORLD_W / 2;
+  const camZ = playerStart ? playerStart.wz : WORLD_H / 2;
+  camera.position.set(camX, 100, camZ + 60);
+  camera.lookAt(camX, 0, camZ);
 
-  // Camera on player HQ
-  camera.position.set(HQX + 8, 100, HQZ + 60);
-  camera.lookAt(HQX + 8, 0, HQZ);
+  // Obvious hint: Scrap comes from Dumps (orange pile). Right-click to gather.
+  const scrapHint = pFac === FAC.SCAV
+    ? 'Dig through <span>TRASH</span> for scrap & salvage — and a path to the enemy. Right-click TRASH or the orange Dump with workers.'
+    : 'Dig through <span>TRASH</span> to open a path to the enemy. Right-click TRASH or Cafes with workers.';
+  setStatusBar(scrapHint, true);
+  setTimeout(() => setStatusBar('Select a unit or building...'), 7000);
 }
 
 // ── Game loop ─────────────────────────────────────────────
@@ -111,6 +121,7 @@ function loop(timestamp) {
     updateParticles(dt);
     updateProjectiles(dt);
     tickHealthBars(G.entities);
+    tickTombstones();
 
     _hudTimer += dt;
     const hudRate = G.selection.length > 0 ? 0.08 : 0.25;
@@ -137,9 +148,10 @@ function _checkGameOver() {
 }
 
 // ── Bootstrap — called by lobby when player clicks DEPLOY ──
-export function startGame(chosenFac) {
+export function startGame(chosenFac, mapIndex = 0) {
   config.playerFac = chosenFac === FAC.GILD ? FAC.GILD : FAC.SCAV;
   config.aiFac     = chosenFac === FAC.GILD ? FAC.SCAV : FAC.GILD;
+  config.mapDef    = (ALL_MAPS[mapIndex] != null) ? ALL_MAPS[mapIndex] : MAP_GREAT_DIVIDE;
   document.getElementById('lobby').style.display = 'none';
   resizeRenderer();
   initMap();

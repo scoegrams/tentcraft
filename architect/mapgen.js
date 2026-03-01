@@ -20,20 +20,21 @@
 export const T = {
   CONCRETE : 0,  // Dark grey asphalt — walkable
   CRACKED  : 1,  // Light cracked concrete — walkable
-  SLUDGE   : 2,  // Toxic waste pool — IMPASSABLE
+  SLUDGE   : 2,  // Ruined city streets — PASSABLE (buildings as props only)
   RUBBLE   : 3,  // Collapsed building debris — IMPASSABLE
-  TRASH    : 4,  // Rummage-able trash heap — IMPASSABLE (harvestable)
+  TRASH    : 4,  // Salvage heap (outskirts) — IMPASSABLE, harvestable for Salvage
 };
 
-export const T_PASSABLE = new Set([T.CONCRETE, T.CRACKED]);
+// SLUDGE is now passable — it represents ruined urban streets with building ruins as props
+export const T_PASSABLE = new Set([T.CONCRETE, T.CRACKED, T.SLUDGE]);
 
 // Tile colors used by the viewer and terrain texture
 export const T_COLOR = {
   [T.CONCRETE]: '#1a1612',
   [T.CRACKED]:  '#28201a',
-  [T.SLUDGE]:   '#0e1a0a',
+  [T.SLUDGE]:   '#2a2830',   // Blue-grey urban street
   [T.RUBBLE]:   '#2e2820',
-  [T.TRASH]:    '#1e180a',
+  [T.TRASH]:    '#524a20',   // Yellow-orange sludge; brown disk = tile of trash (collectible)
 };
 
 // ── Seeded PRNG (Mulberry32) ──────────────────────────────
@@ -247,24 +248,145 @@ export function generateLandfillCircuit(w, h, seed = 8888) {
   return cellularSmooth(tiles, w, h, 2);
 }
 
-// ── THE BREADLINE (locked — future map) ───────────────────
-export function generateBreadline(w, h, seed = 4242) {
-  // Narrow horizontal map — single central resource queue
-  const rng   = mulberry32(seed);
+// ── KABOOM (4-player symmetrical) ─────────────────────────
+// Central cross of sludge divides four quadrants; each quadrant gets a clear base zone.
+export function generateKaboom(w, h, seed = 9999) {
+  const rng  = mulberry32(seed);
   const tiles = new Uint8Array(w * h).fill(T.CONCRETE);
-  const grid  = _makeNoiseGrid(w, h, 0.11, rng);
+  const cx = w / 2, cy = h / 2;
 
+  // Central cross: vertical and horizontal sludge band
+  const band = Math.floor(Math.min(w, h) * 0.08);
+  _fillRect(tiles, w, cx - band, 0, cx + band, h, T.SLUDGE);
+  _fillRect(tiles, w, 0, cy - band, w, cy + band, T.SLUDGE);
+
+  // Trash forests in each quadrant (outer 40%)
+  const tGrid = _makeNoiseGrid(w, h, 0.1, rng);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const ny = y / h;
-      const n  = _sampleNoise(grid, x, y);
-      if ((ny < 0.18 || ny > 0.82) && n < 0.5) tiles[y * w + x] = T.TRASH;
-      if (ny > 0.2 && ny < 0.8 && n < 0.2) tiles[y * w + x] = T.SLUDGE;
+      if (tiles[y * w + x] !== T.CONCRETE) continue;
+      const nx = x / w, ny = y / h;
+      const inQuad = (nx < 0.5 ? 1 - nx * 2 : (nx - 0.5) * 2) * (ny < 0.5 ? 1 - ny * 2 : (ny - 0.5) * 2);
+      if (inQuad < 0.4 && _sampleNoise(tGrid, x, y) < 0.48) tiles[y * w + x] = T.TRASH;
     }
   }
-  _clearCircle(tiles, w, 10, Math.floor(h * 0.5), 12, T.CONCRETE);
-  _clearCircle(tiles, w, w-10, Math.floor(h * 0.5), 12, T.CONCRETE);
-  _fillRect(tiles, w, 0, 0, w, 2, T.TRASH);
-  _fillRect(tiles, w, 0, h-2, w, h, T.TRASH);
+
+  // Cracked roads from center to mid-edges (optional paths)
+  _fillRect(tiles, w, cx - 2, 0, cx + 2, h, T.CRACKED);
+  _fillRect(tiles, w, 0, cy - 2, w, cy + 2, T.CRACKED);
+
+  // Four base zones (quadrant centers)
+  const baseRadius = Math.floor(Math.min(w, h) * 0.12);
+  _clearCircle(tiles, w, baseRadius + 2,     baseRadius + 2,     baseRadius, T.CONCRETE);
+  _clearCircle(tiles, w, w - baseRadius - 2, baseRadius + 2,     baseRadius, T.CONCRETE);
+  _clearCircle(tiles, w, baseRadius + 2,     h - baseRadius - 2, baseRadius, T.CONCRETE);
+  _clearCircle(tiles, w, w - baseRadius - 2, h - baseRadius - 2, baseRadius, T.CONCRETE);
+
+  const border = 2;
+  _fillRect(tiles, w, 0, 0, w, border, T.TRASH);
+  _fillRect(tiles, w, 0, h - border, w, h, T.TRASH);
+  _fillRect(tiles, w, 0, 0, border, h, T.TRASH);
+  _fillRect(tiles, w, w - border, 0, w, h, T.TRASH);
+
   return cellularSmooth(tiles, w, h, 2);
+}
+
+// ── THE OVERFLOW (resource-rich 1v1 test map) ────────────
+// Designed for testing the salvage extraction system:
+//   • ~55% of the map is TRASH salvage heaps
+//   • SLUDGE city-street corridors cut east-west and north-south (passable)
+//   • Large clear base zones with immediate dump nodes
+//   • Contested central boulevard loaded with resources
+//   • Rubble only at tight chokepoints — fights happen in the streets
+export function generateOverflow(w, h, seed = 2077) {
+  const rng  = mulberry32(seed);
+  const rng2 = mulberry32(seed + 5151);
+  const rng3 = mulberry32(seed + 9876);
+  const tiles = new Uint8Array(w * h).fill(T.TRASH); // start TRASH-heavy
+
+  // ── Base clearing: two large open zones ────────────────
+  const baseR = Math.floor(Math.min(w, h) * 0.17);
+  _clearCircle(tiles, w, Math.floor(w * 0.12), Math.floor(h * 0.5), baseR,     T.CONCRETE);
+  _clearCircle(tiles, w, Math.floor(w * 0.88), Math.floor(h * 0.5), baseR,     T.CONCRETE);
+
+  // ── Central boulevard (SLUDGE — city street, passable) ──
+  const mid = Math.floor(h * 0.5);
+  const bW  = Math.floor(h * 0.09); // boulevard width
+  _fillRect(tiles, w, 0, mid - bW, w, mid + bW, T.SLUDGE);
+
+  // ── North/South lateral streets (SLUDGE, passable) ─────
+  const n1 = Math.floor(h * 0.25), n2 = Math.floor(h * 0.75);
+  const sw = Math.floor(h * 0.05);
+  _fillRect(tiles, w, 0, n1 - sw, w, n1 + sw, T.SLUDGE);
+  _fillRect(tiles, w, 0, n2 - sw, w, n2 + sw, T.SLUDGE);
+
+  // ── Vertical cross streets (SLUDGE, passable) ───────────
+  const v1 = Math.floor(w * 0.33), v2 = Math.floor(w * 0.50), v3 = Math.floor(w * 0.67);
+  _fillRect(tiles, w, v1 - sw, 0, v1 + sw, h, T.SLUDGE);
+  _fillRect(tiles, w, v2 - sw, 0, v2 + sw, h, T.SLUDGE);
+  _fillRect(tiles, w, v3 - sw, 0, v3 + sw, h, T.SLUDGE);
+
+  // ── Rubble at intersections (tight chokepoints only) ────
+  const rubGrid = _makeNoiseGrid(w, h, 0.2, rng3);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (tiles[y * w + x] !== T.TRASH) continue;
+      // Only place rubble in a thin ring around mid-map
+      const cx = Math.abs(x - w / 2) / (w * 0.5);
+      const inMid = cx > 0.15 && cx < 0.4;
+      if (!inMid) continue;
+      const n = _sampleNoise(rubGrid, x, y);
+      if (n < 0.15) tiles[y * w + x] = T.RUBBLE;
+    }
+  }
+
+  // ── Cellular automata: organic TRASH blob edges ─────────
+  const smoothed = cellularSmooth(tiles, w, h, 2);
+
+  // ── Re-apply streets (smoothing may blur them) ──────────
+  _fillRect(smoothed, w, 0, mid - bW, w, mid + bW, T.SLUDGE);
+  _fillRect(smoothed, w, 0, n1 - sw, w, n1 + sw, T.SLUDGE);
+  _fillRect(smoothed, w, 0, n2 - sw, w, n2 + sw, T.SLUDGE);
+  _fillRect(smoothed, w, v1 - sw, 0, v1 + sw, h, T.SLUDGE);
+  _fillRect(smoothed, w, v2 - sw, 0, v2 + sw, h, T.SLUDGE);
+  _fillRect(smoothed, w, v3 - sw, 0, v3 + sw, h, T.SLUDGE);
+
+  // ── Restore base zones (never blocked) ──────────────────
+  _clearCircle(smoothed, w, Math.floor(w * 0.12), Math.floor(h * 0.5), baseR,     T.CONCRETE);
+  _clearCircle(smoothed, w, Math.floor(w * 0.88), Math.floor(h * 0.5), baseR,     T.CONCRETE);
+
+  // ── Cracked road on approach to each base ───────────────
+  const approach = sw + 1;
+  _fillRect(smoothed, w, 0, mid - approach, Math.floor(w * 0.3), mid + approach, T.CRACKED);
+  _fillRect(smoothed, w, Math.floor(w * 0.7), mid - approach, w, mid + approach, T.CRACKED);
+
+  // ── Hard border ─────────────────────────────────────────
+  const border = 2;
+  _fillRect(smoothed, w, 0, 0, w, border, T.TRASH);
+  _fillRect(smoothed, w, 0, h - border, w, h, T.TRASH);
+  _fillRect(smoothed, w, 0, 0, border, h, T.TRASH);
+  _fillRect(smoothed, w, w - border, 0, w, h, T.TRASH);
+
+  return smoothed;
+}
+
+// ── THE BREADLINE ──────────────────────────────────────────
+// One main road straight up the pipe; resources at top and bottom; trash on the outskirts.
+export function generateBreadline(w, h, seed = 4242) {
+  const tiles = new Uint8Array(w * h).fill(T.TRASH);   // outskirts = trash
+  const cx   = Math.floor(w / 2);
+  const roadW = 14;                                   // main street width in tiles
+  const x0   = Math.max(0, cx - roadW / 2);
+  const x1   = Math.min(w, cx + roadW / 2);
+
+  // One main vertical road (city street) — SLUDGE = passable street
+  _fillRect(tiles, w, x0, 0, x1, h, T.SLUDGE);
+
+  // Base clearings: top (GILD) and bottom (SCAV) — CONCRETE so buildings fit
+  const topBaseY  = 18;
+  const botBaseY  = h - 18;
+  _clearCircle(tiles, w, cx, topBaseY, 16, T.CONCRETE);
+  _clearCircle(tiles, w, cx, botBaseY, 16, T.CONCRETE);
+
+  return cellularSmooth(tiles, w, h, 1);
 }

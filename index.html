@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tent City Craft — The Great Divide</title>
+  <title>Tent City Craft — Scrap or Die</title>
   <link rel="stylesheet" href="css/hud.css">
 </head>
 <body>
@@ -38,6 +38,11 @@
       <span class="res-label">Wave</span>
       <span class="res-val" id="r-wave">1</span>
     </div>
+    <div id="zoom-controls">
+      <button class="zoom-btn" onclick="gameZoom(1)" title="Zoom In (+)">+</button>
+      <button class="zoom-btn" onclick="gameZoom(-1)" title="Zoom Out (-)">−</button>
+    </div>
+    <button id="lib-btn" onclick="document.getElementById('hotkey-lib').classList.toggle('open')" title="Hotkey Reference (H or ?)">?</button>
   </div>
 
   <!-- Build mode notification -->
@@ -45,6 +50,92 @@
 
   <!-- Drag selection box -->
   <div id="selbox"></div>
+
+  <!-- ── HOTKEY LIBRARY PANEL ──────────────────────────────
+       Toggle with H, ?, or the ? button in the top bar.
+       Slide-in from top-right corner, Warcraft stone style.
+  ── -->
+  <div id="hotkey-lib">
+    <div id="hkl-header">
+      <span>FIELD MANUAL</span>
+      <button id="hkl-close" onclick="document.getElementById('hotkey-lib').classList.remove('open')">✕</button>
+    </div>
+    <div id="hkl-body">
+
+      <div class="hkl-section">CAMERA</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>WASD</kbd><span>Pan camera</span></div>
+        <div class="hk-row"><kbd>Scroll</kbd><span>Zoom in / out</span></div>
+        <div class="hk-row"><kbd>+ / −</kbd><span>Zoom in / out</span></div>
+        <div class="hk-row"><kbd>Mid drag</kbd><span>Free pan</span></div>
+        <div class="hk-row"><kbd>F2</kbd><span>Jump to your base</span></div>
+        <div class="hk-row"><kbd>F3</kbd><span>Jump to enemy base</span></div>
+        <div class="hk-row"><kbd>F4</kbd><span>Jump to map center</span></div>
+      </div>
+
+      <div class="hkl-section">SELECTION</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>Left click</kbd><span>Select unit / building</span></div>
+        <div class="hk-row"><kbd>Left drag</kbd><span>Box select multiple units</span></div>
+        <div class="hk-row"><kbd>Ctrl+A</kbd><span>Select ALL your units</span></div>
+        <div class="hk-row"><kbd>Esc</kbd><span>Deselect / cancel build</span></div>
+      </div>
+
+      <div class="hkl-section">ORDERS (unit selected)</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>Right click</kbd><span>Move / attack / gather</span></div>
+        <div class="hk-row"><kbd>Space</kbd><span>Stop all selected units</span></div>
+        <div class="hk-row"><kbd>A</kbd><span>Attack-move</span></div>
+        <div class="hk-row"><kbd>M</kbd><span>Move order</span></div>
+        <div class="hk-row"><kbd>S</kbd><span>Stop</span></div>
+      </div>
+
+      <div class="hkl-section">WORKER — BUILD (Scavengers)</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>T</kbd><span>Tent City (Housing +4 pop)</span></div>
+        <div class="hk-row"><kbd>M</kbd><span>Mess Hall (Barracks)</span></div>
+        <div class="hk-row"><kbd>C</kbd><span>Chop Shop (Upgrade)</span></div>
+        <div class="hk-row"><kbd>L</kbd><span>Computer Lab (Magic)</span></div>
+        <div class="hk-row"><kbd>J</kbd><span>Junk Turret (Tower)</span></div>
+        <div class="hk-row"><kbd>E</kbd><span>Extractor (forward Salvage depot)</span></div>
+      </div>
+
+      <div class="hkl-section">WORKER — BUILD (Gilded)</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>T</kbd><span>Studio Apts (Housing +4 pop)</span></div>
+        <div class="hk-row"><kbd>M</kbd><span>Security HQ (Barracks)</span></div>
+        <div class="hk-row"><kbd>C</kbd><span>Design Studio (Upgrade)</span></div>
+        <div class="hk-row"><kbd>L</kbd><span>PR Firm (Magic)</span></div>
+        <div class="hk-row"><kbd>J</kbd><span>Microwave Emitter (Tower)</span></div>
+      </div>
+
+      <div class="hkl-section">PRODUCTION (building selected)</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>W</kbd><span>Train Worker / Assistant</span></div>
+        <div class="hk-row"><kbd>I</kbd><span>Train Infantry (Hooded / Enforcer)</span></div>
+        <div class="hk-row"><kbd>R</kbd><span>Train Ranged (Slinger / Guard)</span></div>
+        <div class="hk-row"><kbd>H</kbd><span>Train Heavy (Brute / Bodyguard)</span></div>
+        <div class="hk-row"><kbd>F</kbd><span>Train Siege (Fire-Eater / Drone)</span></div>
+        <div class="hk-row"><kbd>C</kbd><span>Train Caster (Hacker / Consultant)</span></div>
+        <div class="hk-row"><kbd>Esc</kbd><span>Cancel current production</span></div>
+      </div>
+
+      <div class="hkl-section">RESOURCES</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><span class="hk-dot" style="color:#e8a030">■</span><span>Scrap: right-click the orange Dump (pile near base)</span></div>
+        <div class="hk-row"><span class="hk-dot" style="color:#d06020">■</span><span>Cafe / Dept Store — Gilded gather Salvage</span></div>
+        <div class="hk-row"><span class="hk-dot" style="color:#a07820">▒</span><span>TRASH: scrap 2×, salvage 1× — clear paths; deliver to HQ / Extractor</span></div>
+        <div class="hk-row"><span class="hk-dot" style="color:#28283a">▒</span><span>City streets (grey) — passable</span></div>
+      </div>
+
+      <div class="hkl-section">INTERFACE</div>
+      <div class="hkl-grid">
+        <div class="hk-row"><kbd>H</kbd> <kbd>?</kbd><span>Toggle this panel</span></div>
+        <div class="hk-row"><kbd>Click minimap</kbd><span>Jump camera to location</span></div>
+      </div>
+
+    </div>
+  </div>
 
   <!-- Status text bar (Warcraft's StatusBar) -->
   <div id="statusbar">
@@ -60,66 +151,71 @@
       <div id="mm-label">SECTOR MAP</div>
     </div>
 
-    <!-- CENTER: Status Pane (Warcraft's StatusPane.cs + SingleStatusPane.cs) -->
+    <!-- CENTER: Status Pane — StarCraft-style dense layout -->
     <div id="status-pane" class="hud-panel">
 
       <!-- Single unit/building selected -->
       <div id="pane-single">
-        <div id="portrait-frame">
-          <div id="portrait-bg"></div>
-          <div id="portrait-icon">⛺</div>
+
+        <!-- Portrait column -->
+        <div id="portrait-col">
+          <div id="portrait-frame">
+            <div id="portrait-bg"></div>
+            <div id="portrait-icon">⛺</div>
+          </div>
+          <!-- Faction/state badge under portrait -->
+          <div id="portrait-badge">—</div>
         </div>
+
+        <!-- Info column -->
         <div id="pane-info">
+
           <div id="unit-name">— NOTHING SELECTED —</div>
 
-          <!-- HP bar — color changes green→yellow→red (mirrors SingleStatusPane hitPointColors) -->
+          <!-- HP bar -->
           <div class="bar-row">
             <span class="bar-label">HP</span>
-            <div class="bar-track">
-              <div class="bar-fill hp-high" id="bar-hp" style="width:0%"></div>
-            </div>
+            <div class="bar-track"><div class="bar-fill hp-high" id="bar-hp" style="width:0%"></div></div>
             <span class="bar-val" id="val-hp"></span>
           </div>
 
-          <!-- Resource remaining (for resource nodes) -->
+          <!-- Resource remaining (nodes only) -->
           <div class="bar-row" id="row-mp" style="display:none">
             <span class="bar-label">RES</span>
-            <div class="bar-track">
-              <div class="bar-fill mp-bar" id="bar-mp" style="width:100%"></div>
-            </div>
+            <div class="bar-track"><div class="bar-fill mp-bar" id="bar-mp" style="width:100%"></div></div>
             <span class="bar-val" id="val-mp"></span>
           </div>
 
-          <!-- Production progress (mirrors StatusPane.SetProgress) -->
+          <!-- Production progress (buildings) -->
           <div class="bar-row" id="row-prod" style="display:none">
             <span class="bar-label">PROD</span>
-            <div class="bar-track">
-              <div class="bar-fill prod-bar" id="bar-prod" style="width:0%"></div>
-            </div>
+            <div class="bar-track"><div class="bar-fill prod-bar" id="bar-prod" style="width:0%"></div></div>
             <span class="bar-val" id="val-prod"></span>
           </div>
 
+          <!-- 2-column stats grid (SC style) -->
           <div id="unit-stats">
-            <span class="stat-k">ATK</span><span class="stat-v" id="s-atk">—</span>
-            &nbsp;
-            <span class="stat-k">RNG</span><span class="stat-v" id="s-rng">—</span>
-            &nbsp;
-            <span class="stat-k">ST</span><span class="stat-v" id="s-state">—</span>
+            <div class="stat-cell"><span class="stat-k">⚔ ATK</span><span class="stat-v" id="s-atk">—</span></div>
+            <div class="stat-cell"><span class="stat-k">👁 RNG</span><span class="stat-v" id="s-rng">—</span></div>
+            <div class="stat-cell"><span class="stat-k">🛡 ARM</span><span class="stat-v" id="s-arm">—</span></div>
+            <div class="stat-cell"><span class="stat-k">⚡ SPD</span><span class="stat-v" id="s-spd">—</span></div>
+            <div class="stat-cell stat-state"><span class="stat-k">ST</span><span class="stat-v stat-state-v" id="s-state">—</span></div>
+            <div class="stat-cell"><span class="stat-k">POP</span><span class="stat-v" id="s-pop">—</span></div>
           </div>
 
           <div id="pane-desc"></div>
+
         </div>
       </div>
 
-      <!-- Group selection (multiple units) -->
+      <!-- Group selection -->
       <div id="pane-group"></div>
 
     </div>
 
-    <!-- RIGHT: Command Card 3×3 (Warcraft's GameButton grid) -->
+    <!-- RIGHT: Command Card 3×3 -->
     <div id="cmd-card">
       <div id="cmd-grid">
-        <!-- 9 slots, JS fills them via fillCmdCard() -->
         <button class="cmd-btn cmd-empty" id="cmd-0"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
         <button class="cmd-btn cmd-empty" id="cmd-1"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
         <button class="cmd-btn cmd-empty" id="cmd-2"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
@@ -135,132 +231,71 @@
   </div><!-- #hud -->
 
   <!-- ══════════════════════════════════════════════════════
-       LOBBY — CRT terminal race/map select screen
+       LOBBY — map left · factions right (WC2 style)
        ══════════════════════════════════════════════════════ -->
   <div id="lobby">
-    <!-- scanlines/vignette overlay — must be OUTSIDE lobby-inner so it doesn't affect grid -->
-    <div id="crt-vignette"></div>
 
-    <div id="lobby-inner">
+    <header id="lb-head">
+      <div id="lb-title">TENT CITY CRAFT</div>
+      <div id="lb-tagline">SCRAP OR DIE</div>
+    </header>
 
-      <!-- ── Title bar ── -->
-      <div id="ltitle-bar">
-        <span id="ltitle-sys">SYS://TENTCRAFT.EXE &nbsp; v0.9.1-ALPHA &nbsp; [PRESS ANY KEY... JK, CHOOSE A SIDE]</span>
-        <span id="ltitle-blink">_</span>
+    <div id="lb-body">
+
+      <!-- LEFT: map preview -->
+      <div id="lb-map-col">
+        <canvas id="lb-canvas" width="480" height="360"></canvas>
+        <div id="lb-map-nav">
+          <button class="lb-arr" onclick="mapNav(-1)">◄</button>
+          <div id="lb-mapinfo">
+            <span id="lb-mapname">THE GREAT DIVIDE</span>
+            <span id="lb-mapstat">1v1 · STANDARD</span>
+          </div>
+          <button class="lb-arr" onclick="mapNav(1)">►</button>
+        </div>
       </div>
 
-      <div id="ltitle-main">
-        <div id="ltitle-sub">// CLASSIFIED · A GAME OF SURVIVAL &amp; CONTROL //</div>
-        <h1 id="ltitle-h1" data-text="TENT CITY CRAFT">TENT CITY CRAFT</h1>
-        <div id="ltitle-rule">▓▓▓▓▓▓▓▓▓▓&nbsp; THE GREAT DIVIDE &nbsp;▓▓▓▓▓▓▓▓▓▓</div>
-      </div>
+      <!-- RIGHT: faction list + deploy -->
+      <div id="lb-right">
 
-      <!-- ── Main content: 3 columns ── -->
-      <div id="lmain-grid">
+        <div id="lb-choose-label">CHOOSE YOUR FACTION</div>
 
-        <!-- LEFT: SCAVENGERS -->
-        <div class="lfac" id="lfac-scav" onclick="lobbyChoose('scav')">
-          <div class="lfac-head scav-head">
-            <span class="lfac-tag">[FACTION-01]</span>
-            <span class="lfac-class">HAVE-NOTS</span>
-          </div>
-          <div class="lfac-name scav-name">THE SCAVENGERS</div>
-          <div class="lfac-lore">
-            Evicted. Resilient.<br>
-            Resourceful. Scrap the ruins.<br>
-            Build from nothing.<br>
-            The dumps are your gold mines.
-          </div>
-          <div class="lfac-divider">── COMBAT ROSTER ─────────────</div>
-          <div class="lfac-units">
-            <div class="lunit"><span class="lu-key">[W]</span> WORKER &nbsp;&nbsp;&nbsp; <span class="lu-name">The Scavenger</span></div>
-            <div class="lunit"><span class="lu-key">[1]</span> INFANTRY &nbsp; <span class="lu-name">The Hooded</span></div>
-            <div class="lunit"><span class="lu-key">[2]</span> RANGED &nbsp;&nbsp;&nbsp; <span class="lu-name">The Slinger</span></div>
-            <div class="lunit"><span class="lu-key">[3]</span> HEAVY &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">The Brute</span></div>
-            <div class="lunit"><span class="lu-key">[4]</span> SIEGE &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Fire-Eater</span></div>
-            <div class="lunit"><span class="lu-key">[T]</span> TOWER &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Junk Turret</span></div>
-          </div>
-          <div class="lfac-divider">── ECONOMY ────────────────────</div>
-          <div class="lfac-econ"><span class="lecon-scav">♻ SCRAP</span> &nbsp;←&nbsp; DUMPS &nbsp;|&nbsp; <span class="lecon-salv">⚙ SALVAGE</span> ←&nbsp; CAFES</div>
-          <div class="lfac-sel scav-sel" id="sel-scav">▶ SELECT FACTION ◀</div>
-        </div>
-
-        <!-- CENTER: MAP SELECT -->
-        <div id="lmap-panel">
-          <div class="lfac-head" style="border-color:#4a3a2a">
-            <span class="lfac-tag">[MAP-SELECT]</span>
-            <span class="lfac-class">THEATRE OF WAR</span>
-          </div>
-
-          <div id="lmap-nav">
-            <button class="lmap-btn" onclick="mapNav(-1)">◄ PREV</button>
-            <span id="lmap-counter">MAP 1 / 3</span>
-            <button class="lmap-btn" onclick="mapNav(1)">NEXT ►</button>
-          </div>
-
-          <canvas id="lobby-map" width="220" height="180"></canvas>
-
-          <div id="lmap-info">
-            <div id="lmap-name">THE GREAT DIVIDE</div>
-            <div id="lmap-stats">1v1 · STANDARD · 64×64 SECTORS</div>
-            <div id="lmap-desc-text">"Trash wastes divide two factions.<br>No neutral ground. No mercy."</div>
-          </div>
-
-          <div id="lmap-list">
-            <div class="lmap-entry active" id="mentry-0" onclick="selectMap(0)">►&nbsp;THE GREAT DIVIDE &nbsp;<span class="mstatus avail">[AVAILABLE]</span></div>
-            <div class="lmap-entry"        id="mentry-1" onclick="selectMap(1)">&nbsp;&nbsp;LANDFILL CIRCUIT &nbsp;<span class="mstatus locked">[LOCKED]</span></div>
-            <div class="lmap-entry"        id="mentry-2" onclick="selectMap(2)">&nbsp;&nbsp;THE BREADLINE&nbsp;&nbsp;&nbsp; &nbsp;<span class="mstatus locked">[LOCKED]</span></div>
-          </div>
-
-          <div id="lmap-legend">
-            <span class="leg-scav">■ SCAV</span> &nbsp;
-            <span class="leg-gild">■ GILD</span> &nbsp;
-            <span class="leg-dump">◆ DUMP</span> &nbsp;
-            <span class="leg-cafe">◆ CAFE</span>
+        <!-- SCAVENGERS -->
+        <div class="lb-fac" id="lf-scav" onclick="lobbyChoose('scav')">
+          <div class="lf-inner">
+            <div>
+              <div class="lf-badge scav-badge">HAVE-NOTS</div>
+              <div class="lf-name scav-name">THE SCAVENGERS</div>
+              <div class="lf-lore">Evicted. Resilient. Scrap the ruins.<br>The dumps are your gold mines.</div>
+            </div>
+            <div class="lf-res">
+              ♻ <strong>SCRAP</strong> & ⚙ <strong>SALVAGE</strong> from TRASH (2:1) — right‑click to clear paths
+            </div>
           </div>
         </div>
 
-        <!-- RIGHT: GILDED -->
-        <div class="lfac" id="lfac-gild" onclick="lobbyChoose('gild')">
-          <div class="lfac-head gild-head">
-            <span class="lfac-tag">[FACTION-02]</span>
-            <span class="lfac-class">HAVES</span>
+        <!-- THE GILDED -->
+        <div class="lb-fac" id="lf-gild" onclick="lobbyChoose('gild')">
+          <div class="lf-inner">
+            <div>
+              <div class="lf-badge gild-badge">HAVES</div>
+              <div class="lf-name gild-name">THE GILDED</div>
+              <div class="lf-lore">Gated. Wealthy. Ruthless.<br>Buy Enforcers. Keep them out.</div>
+            </div>
+            <div class="lf-res">
+              ⚙ <strong>SALVAGE</strong> from Cafes &nbsp;·&nbsp; ♻ <strong>SCRAP</strong> from Dumps
+            </div>
           </div>
-          <div class="lfac-name gild-name">THE GILDED</div>
-          <div class="lfac-lore">
-            Gated. Wealthy. Ruthless.<br>
-            Send Assistants to the Cafes.<br>
-            Buy Enforcers.<br>
-            Keep them out.
-          </div>
-          <div class="lfac-divider">── COMBAT ROSTER ─────────────</div>
-          <div class="lfac-units">
-            <div class="lunit"><span class="lu-key">[W]</span> WORKER &nbsp;&nbsp;&nbsp; <span class="lu-name">The Assistant</span></div>
-            <div class="lunit"><span class="lu-key">[1]</span> INFANTRY &nbsp; <span class="lu-name">The Enforcer</span></div>
-            <div class="lunit"><span class="lu-key">[2]</span> RANGED &nbsp;&nbsp;&nbsp; <span class="lu-name">Tactical Guard</span></div>
-            <div class="lunit"><span class="lu-key">[3]</span> HEAVY &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">The Bodyguard</span></div>
-            <div class="lunit"><span class="lu-key">[4]</span> SIEGE &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Cancel Drone</span></div>
-            <div class="lunit"><span class="lu-key">[T]</span> TOWER &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Microwave Emitter</span></div>
-          </div>
-          <div class="lfac-divider">── ECONOMY ────────────────────</div>
-          <div class="lfac-econ"><span class="lecon-salv">⚙ SALVAGE</span> ←&nbsp; CAFES &nbsp;|&nbsp; <span class="lecon-scav">♻ SCRAP</span> &nbsp;←&nbsp; DUMPS</div>
-          <div class="lfac-sel gild-sel" id="sel-gild">▶ SELECT FACTION ◀</div>
         </div>
 
-      </div><!-- #lmain-grid -->
+        <p id="lb-tip">Dig through the <strong>TRASH</strong> to get scrap, salvage, and a path to the enemy. Right-click TRASH with workers (2× scrap, 1× salvage). Orange Dumps for scrap. Extractor (E) shortens salvage runs.</p>
 
-      <!-- ── Status / deploy bar ── -->
-      <div id="ldeploy-bar">
-        <div id="ldeploy-status">
-          <span id="ldeploy-fac-label">&nbsp;</span>
-          <span id="ldeploy-map-label">&nbsp;</span>
-        </div>
-        <button id="deploy-btn" disabled onclick="lobbyStart()">
-          ▶&nbsp;&nbsp;DEPLOY&nbsp;&nbsp;◀
-        </button>
-      </div>
+        <button id="deploy-btn" disabled onclick="lobbyStart()">DEPLOY</button>
 
-    </div><!-- #lobby-inner -->
+      </div><!-- #lb-right -->
+
+    </div><!-- #lb-body -->
+
   </div><!-- #lobby -->
 
   <!-- Three.js importmap + entry point -->
@@ -269,190 +304,307 @@
   </script>
   <script type="module" src="js/main.js"></script>
 
+  <!-- Zoom control (called from HUD buttons + keyboard in input.js) -->
+  <script>
+    function gameZoom(dir) {
+      // dir: +1 = zoom in (frustum smaller), -1 = zoom out (frustum larger)
+      if (window._gameZoom) window._gameZoom(dir);
+    }
+  </script>
+
   <!-- Lobby interaction -->
   <script>
     let _lobbyFac = null;
     let _lobbyMap = 0;
 
+    // Must stay in sync with ALL_MAPS order in maps/index.js
     const MAPS = [
-      {
-        name: 'THE GREAT DIVIDE',
-        stats: '1v1 · STANDARD · 64×64 SECTORS',
-        desc: '"Trash wastes divide two factions.<br>No neutral ground. No mercy."',
-        available: true,
-      },
-      {
-        name: 'LANDFILL CIRCUIT',
-        stats: '1v1 · CONTESTED · 96×96 SECTORS',
-        desc: '"Three landfills. Six approaches.<br>The circuit never sleeps."',
-        available: false,
-      },
-      {
-        name: 'THE BREADLINE',
-        stats: '1v1 · ECONOMIC · 64×96 SECTORS',
-        desc: '"Control the queue or starve.<br>Resources cluster at the center."',
-        available: false,
-      },
+      { name: 'THE GREAT DIVIDE',  stats: '1v1 · STANDARD',      available: true  },  // 0
+      { name: 'LANDFILL CIRCUIT',  stats: '1v1 · CONTESTED',      available: false },  // 1
+      { name: 'THE BREADLINE',     stats: '1v1 · ECONOMIC',       available: false },  // 2
+      { name: 'KABOOM BNE',        stats: '2–4P · SYMMETRICAL',   available: true  },  // 3
+      { name: 'THE OVERFLOW',      stats: '1v1 · RESOURCE RICH',  available: true  },  // 4
     ];
 
     function lobbyChoose(fac) {
       _lobbyFac = fac;
-      document.querySelectorAll('.lfac').forEach(c => c.classList.remove('selected'));
-      document.getElementById('lfac-' + fac).classList.add('selected');
-      _refreshStatus();
-      drawLobbyMap(fac);
+      document.querySelectorAll('.lb-fac').forEach(c => c.classList.remove('selected'));
+      document.getElementById('lf-' + fac).classList.add('selected');
+      document.getElementById('deploy-btn').disabled = !MAPS[_lobbyMap].available;
+      drawMap();
     }
 
     function mapNav(dir) {
       _lobbyMap = (_lobbyMap + dir + MAPS.length) % MAPS.length;
-      selectMap(_lobbyMap);
-    }
-
-    // Map entry prefix characters stored separately so innerHTML isn't corrupted
-    const MAP_LABELS = [
-      'THE GREAT DIVIDE',
-      'LANDFILL CIRCUIT',
-      'THE BREADLINE&nbsp;&nbsp;&nbsp;',
-    ];
-    const MAP_STATUS = [
-      '<span class="mstatus avail">[AVAILABLE]</span>',
-      '<span class="mstatus locked">[LOCKED]</span>',
-      '<span class="mstatus locked">[LOCKED]</span>',
-    ];
-
-    function selectMap(idx) {
-      _lobbyMap = idx;
-      document.querySelectorAll('.lmap-entry').forEach((e, i) => {
-        e.classList.toggle('active', i === idx);
-        const prefix = i === idx ? '►&nbsp;' : '&nbsp;&nbsp;';
-        e.innerHTML = `${prefix}${MAP_LABELS[i]}&nbsp;${MAP_STATUS[i]}`;
-      });
-      const m = MAPS[idx];
-      document.getElementById('lmap-name').textContent = m.name;
-      document.getElementById('lmap-stats').textContent = m.stats;
-      document.getElementById('lmap-desc-text').innerHTML = m.desc;
-      document.getElementById('lmap-counter').textContent = `MAP ${idx+1} / ${MAPS.length}`;
-      drawLobbyMap(_lobbyFac || 'scav');
-      _refreshStatus();
-    }
-
-    function _refreshStatus() {
-      const fLabel = document.getElementById('ldeploy-fac-label');
-      const mLabel = document.getElementById('ldeploy-map-label');
-      const btn    = document.getElementById('deploy-btn');
-      const map    = MAPS[_lobbyMap];
-
-      fLabel.textContent = _lobbyFac
-        ? `FACTION: ${_lobbyFac === 'scav' ? 'THE SCAVENGERS' : 'THE GILDED'}`
-        : 'FACTION: --SELECT--';
-      mLabel.textContent = `MAP: ${map.available ? map.name : map.name + ' [LOCKED]'}`;
-
-      btn.disabled = !(_lobbyFac && map.available);
+      const m = MAPS[_lobbyMap];
+      document.getElementById('lb-mapname').textContent = m.name;
+      document.getElementById('lb-mapstat').textContent =
+        m.available ? m.stats : m.stats + '  ·  LOCKED';
+      document.getElementById('deploy-btn').disabled = !(_lobbyFac && m.available);
+      drawMap();
     }
 
     function lobbyStart() {
       if (!_lobbyFac || !MAPS[_lobbyMap].available) return;
       const key = _lobbyFac === 'gild' ? 'GILD' : 'SCAV';
-      if (window._startGame && window._FAC) window._startGame(window._FAC[key]);
+      if (window._startGame && window._FAC) window._startGame(window._FAC[key], _lobbyMap);
     }
 
-    /* ── Map preview canvas ── */
-    function drawLobbyMap(chosenFac) {
-      const cv  = document.getElementById('lobby-map');
+    /* ── Map canvas drawing ─────────────────────────────── */
+    function drawMap() {
+      const cv  = document.getElementById('lb-canvas');
       const ctx = cv.getContext('2d');
       const W = cv.width, H = cv.height;
+      ctx.clearRect(0, 0, W, H);
 
-      // Black base
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-
-      if (_lobbyMap === 0) {
-        _drawMapDivide(ctx, W, H, chosenFac || 'scav');
-      } else {
-        // Locked map placeholder
-        ctx.fillStyle = '#0a0804';
+      if (_lobbyMap === 3) { _drawKaboom(ctx, W, H); return; }
+      if (_lobbyMap === 4) { _drawOverflow(ctx, W, H); return; }
+      if (!MAPS[_lobbyMap].available) {
+        ctx.fillStyle = '#08060a';
         ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = '#2a2018';
-        ctx.font = 'bold 11px monospace';
+        ctx.fillStyle = '#444';
+        ctx.font = 'bold 18px Rajdhani, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('[ ACCESS DENIED ]', W/2, H/2 - 8);
-        ctx.fillText('CLASSIFICATION: LOCKED', W/2, H/2 + 8);
+        ctx.fillText('[ LOCKED ]', W / 2, H / 2 - 12);
+        ctx.fillStyle = '#333';
+        ctx.font = '13px Rajdhani, sans-serif';
+        ctx.fillText(MAPS[_lobbyMap].name, W / 2, H / 2 + 14);
+        return;
       }
 
-      // CRT scanline overlay on canvas
-      for (let y = 0; y < H; y += 2) {
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        ctx.fillRect(0, y, W, 1);
-      }
+      // ── THE GREAT DIVIDE ────────────────────────────────
+      ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W * 0.55, H);
+      ctx.fillStyle = '#0c0e14'; ctx.fillRect(W * 0.55, 0, W, H);
 
-      // Border
-      ctx.strokeStyle = '#4a3a1a';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(0, 0, W, H);
-    }
-
-    function _drawMapDivide(ctx, W, H, chosenFac) {
-      // Terrain base — scav side warmer, gild side cooler
-      ctx.fillStyle = '#120d06'; ctx.fillRect(0, 0, W * 0.60, H);
-      ctx.fillStyle = '#080d18'; ctx.fillRect(W * 0.60, 0, W, H);
-
-      // Trash blobs (dark brown filled ellipses)
-      ctx.fillStyle = '#1e1408';
+      // Trash blobs top/bottom flanks
+      ctx.fillStyle = '#1a1a14';
       const blobs = [
-        [W*.22,H*.15,20,7],[W*.50,H*.12,24,7],[W*.78,H*.15,20,7],
-        [W*.22,H*.85,20,7],[W*.50,H*.88,24,7],[W*.78,H*.85,20,7],
-        [W*.12,H*.36,18,9],[W*.12,H*.64,18,9],
-        [W*.88,H*.36,16,8],[W*.88,H*.64,16,8],
-        [W*.50,H*.36,11,6],[W*.50,H*.64,11,6],
+        [.12,.10,52,16],[.35,.08,60,16],[.58,.10,50,16],[.80,.10,48,14],
+        [.12,.90,52,16],[.35,.92,60,16],[.58,.90,50,16],[.80,.90,48,14],
+        [.06,.30,22,28],[.06,.70,22,28],
+        [.94,.30,20,28],[.94,.70,20,28],
       ];
-      for (const [cx,cy,rx,ry] of blobs) {
-        ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.fill();
+      for (const [bx,by,rx,ry] of blobs) {
+        ctx.beginPath();
+        ctx.ellipse(bx*W, by*H, rx, ry, 0, 0, Math.PI*2);
+        ctx.fill();
       }
 
-      // Main roads (dirt paths)
-      ctx.strokeStyle = 'rgba(90,68,30,0.55)'; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(W*.10,H*.50); ctx.lineTo(W*.90,H*.50); ctx.stroke();
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(W*.50,H*.10); ctx.lineTo(W*.50,H*.90); ctx.stroke();
+      // Sludge pools center
+      ctx.fillStyle = '#181820';
+      const pools = [[.50,.34,18,12],[.50,.66,18,12],[.50,.50,12,10]];
+      for (const [px,py,rx,ry] of pools) {
+        ctx.beginPath(); ctx.ellipse(px*W,py*H,rx,ry,0,0,Math.PI*2); ctx.fill();
+      }
+
+      // Main horizontal road
+      ctx.fillStyle = '#222';
+      ctx.fillRect(0, H*.46, W, H*.08);
+
+      // Rubble chokepoints
+      ctx.fillStyle = '#252525';
+      [[.28,.40,14,10],[.28,.60,14,10],[.72,.40,14,10],[.72,.60,14,10]].forEach(([px,py,rw,rh]) => {
+        ctx.fillRect(px*W - rw/2, py*H - rh/2, rw, rh);
+      });
 
       // Divide line
-      ctx.strokeStyle = '#5c3aaa'; ctx.lineWidth = 1;
-      ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(W*.60,2); ctx.lineTo(W*.60,H-2); ctx.stroke();
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(W*.55, 4); ctx.lineTo(W*.55, H-4); ctx.stroke();
       ctx.setLineDash([]);
 
-      // Resource nodes: dumps (yellow), cafes (amber)
-      const dumps = [[W*.10,H*.50],[W*.22,H*.37],[W*.22,H*.63],[W*.40,H*.50],[W*.40,H*.32],[W*.40,H*.68],[W*.11,H*.12],[W*.11,H*.88]];
-      ctx.fillStyle = '#d4a017';
-      for (const [x,y] of dumps) { ctx.fillRect(x-3,y-3,6,6); }
+      // Resource nodes — dumps (yellow) and cafes (amber)
+      const pFac = _lobbyFac || 'scav';
+      const dumps = [[.13,.50],[.24,.36],[.24,.64],[.40,.50],[.40,.33],[.40,.67]];
+      ctx.fillStyle = '#c8a020';
+      for (const [x,y] of dumps) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+        ctx.strokeStyle = 'rgba(200,160,32,.3)'; ctx.lineWidth = 1;
+        ctx.strokeRect(x*W-6, y*H-6, 12, 12);
+      }
 
-      const cafes = [[W*.90,H*.50],[W*.68,H*.37],[W*.68,H*.63],[W*.34,H*.37],[W*.34,H*.63]];
-      ctx.fillStyle = '#c07020';
-      for (const [x,y] of cafes) { ctx.fillRect(x-3,y-3,6,6); }
+      const cafes = [[.87,.50],[.70,.36],[.70,.64],[.62,.36],[.62,.64]];
+      ctx.fillStyle = '#e05020';
+      for (const [x,y] of cafes) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+        ctx.strokeStyle = 'rgba(224,80,32,.3)'; ctx.lineWidth = 1;
+        ctx.strokeRect(x*W-6, y*H-6, 12, 12);
+      }
 
-      // Player starts
-      const pCol = chosenFac === 'scav' ? '#e05010' : '#2080d0';
-      const aCol = chosenFac === 'scav' ? '#2080d0' : '#e05010';
-      ctx.fillStyle = pCol; ctx.fillRect(W*.08-5, H*.50-5, 10, 10);
-      ctx.fillStyle = aCol; ctx.fillRect(W*.88-5, H*.50-5, 10, 10);
+      // Player starts — highlight chosen faction
+      const scavCol = pFac === 'scav' ? '#ff5010' : '#b03008';
+      const gildCol = pFac === 'gild' ? '#40a8ff' : '#1050a0';
 
-      // Pixel glow on player starts
-      ctx.strokeStyle = pCol; ctx.lineWidth = 1;
-      ctx.strokeRect(W*.08-7, H*.50-7, 14, 14);
-      ctx.strokeStyle = aCol;
-      ctx.strokeRect(W*.88-7, H*.50-7, 14, 14);
+      ctx.fillStyle = scavCol;
+      ctx.fillRect(W*.10-7, H*.50-7, 14, 14);
+      ctx.strokeStyle = scavCol; ctx.lineWidth = 2;
+      ctx.strokeRect(W*.10-10, H*.50-10, 20, 20);
+
+      ctx.fillStyle = gildCol;
+      ctx.fillRect(W*.90-7, H*.50-7, 14, 14);
+      ctx.strokeStyle = gildCol;
+      ctx.strokeRect(W*.90-10, H*.50-10, 20, 20);
+
+      // Legend
+      ctx.font = 'bold 11px Rajdhani, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = scavCol;
+      ctx.fillText(pFac === 'scav' ? '▶ YOU' : '▶ SCAV', W*.10-4, H*.50-14);
+      ctx.fillStyle = gildCol;
+      ctx.textAlign = 'right';
+      ctx.fillText(pFac === 'gild' ? 'YOU ◀' : 'GILD ◀', W*.90+4, H*.50-14);
+
+      // Map border
+      ctx.strokeStyle = '#2a2a2a';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(1, 1, W-2, H-2);
     }
 
-    // Cursor blink
-    setInterval(() => {
-      const b = document.getElementById('ltitle-blink');
-      if (b) b.style.visibility = b.style.visibility === 'hidden' ? 'visible' : 'hidden';
-    }, 530);
+    function _drawKaboom(ctx, W, H) {
+      const pFac = _lobbyFac || 'scav';
+      ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W/2, H/2);
+      ctx.fillStyle = '#0c0e14'; ctx.fillRect(W/2, 0, W/2, H/2);
+      ctx.fillStyle = '#111'; ctx.fillRect(0, H/2, W/2, H/2);
+      ctx.fillStyle = '#0c0e14'; ctx.fillRect(W/2, H/2, W/2, H/2);
 
-    window.addEventListener('load', () => {
-      drawLobbyMap('scav');
-      _refreshStatus();
-    });
+      ctx.fillStyle = '#181820';
+      const band = 18;
+      ctx.fillRect(W/2 - band/2, 0, band, H);
+      ctx.fillRect(0, H/2 - band/2, W, band);
+
+      ctx.fillStyle = '#1a1a14';
+      [[.12,.12],[.88,.12],[.12,.88],[.88,.88]].forEach(([bx,by]) => {
+        ctx.beginPath(); ctx.ellipse(bx*W, by*H, 44, 32, 0, 0, Math.PI*2); ctx.fill();
+      });
+      [[.20,.35],[.80,.35],[.20,.65],[.80,.65],
+       [.35,.20],[.65,.20],[.35,.80],[.65,.80]].forEach(([bx,by]) => {
+        ctx.beginPath(); ctx.ellipse(bx*W, by*H, 16, 10, 0, 0, Math.PI*2); ctx.fill();
+      });
+
+      ctx.fillStyle = '#222';
+      ctx.fillRect(0, H/2 - 5, W, 10);
+      ctx.fillRect(W/2 - 5, 0, 10, H);
+
+      // Resource nodes per quadrant
+      const qDumps = [[.18,.25],[.28,.18],[.18,.75],[.28,.82]];
+      const qCafes = [[.82,.25],[.72,.18],[.82,.75],[.72,.82]];
+      ctx.fillStyle = '#c8a020';
+      for (const [x,y] of qDumps) { ctx.fillRect(x*W-4,y*H-4,8,8); }
+      ctx.fillStyle = '#e05020';
+      for (const [x,y] of qCafes) { ctx.fillRect(x*W-4,y*H-4,8,8); }
+      ctx.fillStyle = '#c8a020';
+      [[-20,-20],[20,-20],[-20,20],[20,20]].forEach(([dx,dy]) => {
+        ctx.fillRect(W/2+dx-4, H/2+dy-4, 8, 8);
+      });
+
+      // Four base starts
+      const cols = [
+        pFac==='scav' ? '#ff5010' : '#b03008',
+        pFac==='gild' ? '#40a8ff' : '#1050a0',
+        pFac==='scav' ? '#ff5010' : '#b03008',
+        pFac==='gild' ? '#40a8ff' : '#1050a0',
+      ];
+      const starts = [[.12,.50],[.88,.50],[.50,.12],[.50,.88]];
+      starts.forEach(([x,y], i) => {
+        ctx.fillStyle = cols[i];
+        ctx.fillRect(x*W-6, y*H-6, 12, 12);
+        ctx.strokeStyle = cols[i]; ctx.lineWidth = 1.5;
+        ctx.strokeRect(x*W-9, y*H-9, 18, 18);
+      });
+
+      ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+      ctx.strokeRect(1, 1, W-2, H-2);
+    }
+
+    function _drawOverflow(ctx, W, H) {
+      const pFac = _lobbyFac || 'scav';
+
+      ctx.fillStyle = '#141410'; ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = '#2a2010';
+      const trashBlobs = [
+        [.25,.15,55,30],[.55,.10,60,25],[.78,.18,42,28],
+        [.22,.85,55,30],[.55,.88,58,26],[.80,.82,40,28],
+        [.08,.40,30,40],[.08,.60,28,38],
+        [.92,.40,28,38],[.92,.62,26,36],
+        [.42,.28,38,22],[.58,.28,34,20],
+        [.42,.72,36,22],[.60,.72,34,20],
+        [.30,.50,22,18],[.70,.50,22,18],
+      ];
+      for (const [bx,by,rx,ry] of trashBlobs) {
+        ctx.beginPath(); ctx.ellipse(bx*W, by*H, rx, ry, 0, 0, Math.PI*2); ctx.fill();
+      }
+
+      ctx.fillStyle = '#1e1e28';
+      const sw = 10;
+      ctx.fillRect(0, H*.50-sw, W, sw*2);           // main boulevard
+      ctx.fillRect(0, H*.25-sw/2, W, sw);           // north street
+      ctx.fillRect(0, H*.75-sw/2, W, sw);           // south street
+      ctx.fillRect(W*.33-sw/2, 0, sw, H);           // west cross
+      ctx.fillRect(W*.50-sw/2, 0, sw, H);           // mid cross
+      ctx.fillRect(W*.67-sw/2, 0, sw, H);           // east cross
+
+      ctx.fillStyle = '#181818';
+      ctx.beginPath(); ctx.arc(W*.12, H*.50, 42, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(W*.88, H*.50, 42, 0, Math.PI*2); ctx.fill();
+
+      ctx.fillStyle = '#222';
+      ctx.fillRect(0, H*.47, W*.30, H*.06);
+      ctx.fillRect(W*.70, H*.47, W*.30, H*.06);
+
+      // Scrap dump nodes (gold squares — lots of them)
+      const dumps = [
+        [.13,.50],[.20,.38],[.20,.62],[.27,.50],[.27,.36],[.27,.64],
+        [.73,.50],[.80,.38],[.80,.62],[.87,.50],[.87,.36],[.87,.64],
+        [.38,.50],[.50,.36],[.50,.64],[.62,.50],
+        [.38,.34],[.38,.66],[.62,.34],[.62,.66],
+        [.44,.24],[.56,.24],[.44,.76],[.56,.76],
+      ];
+      ctx.fillStyle = '#c8a020';
+      for (const [x,y] of dumps) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+      }
+
+      const cafes = [
+        [.87,.50],[.80,.38],[.80,.62],
+        [.70,.50],[.70,.36],[.70,.64],
+        [.62,.50],[.62,.34],[.62,.66],
+        [.50,.24],[.50,.76],
+      ];
+      ctx.fillStyle = '#e05020';
+      for (const [x,y] of cafes) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+      }
+
+      // Player starts
+      const scavCol = pFac === 'scav' ? '#ff5010' : '#b03008';
+      const gildCol = pFac === 'gild' ? '#40a8ff' : '#1050a0';
+      ctx.fillStyle = scavCol;
+      ctx.fillRect(W*.09-7, H*.50-7, 14, 14);
+      ctx.strokeStyle = scavCol; ctx.lineWidth = 2;
+      ctx.strokeRect(W*.09-10, H*.50-10, 20, 20);
+
+      ctx.fillStyle = gildCol;
+      ctx.fillRect(W*.91-7, H*.50-7, 14, 14);
+      ctx.strokeStyle = gildCol;
+      ctx.strokeRect(W*.91-10, H*.50-10, 20, 20);
+
+      ctx.font = 'bold 11px Rajdhani, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = scavCol; ctx.fillText(pFac === 'scav' ? '▶ YOU' : '▶ SCAV', W*.09-4, H*.50-14);
+      ctx.fillStyle = gildCol; ctx.textAlign = 'right';
+      ctx.fillText(pFac === 'gild' ? 'YOU ◀' : 'GILD ◀', W*.91+4, H*.50-14);
+
+      ctx.textAlign = 'left'; ctx.font = '10px Rajdhani, sans-serif';
+      ctx.fillStyle = '#c8a020'; ctx.fillText('■ Scrap Dumps', 8, H-28);
+      ctx.fillStyle = '#e05020'; ctx.fillText('■ Cafes/Stores', 8, H-14);
+      ctx.fillStyle = '#556'; ctx.fillText('▒ TRASH = Salvage', W/2 - 30, H-14);
+
+      ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+      ctx.strokeRect(1, 1, W-2, H-2);
+    }
+
+    window.addEventListener('load', drawMap);
   </script>
 
 </body>

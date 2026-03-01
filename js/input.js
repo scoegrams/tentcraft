@@ -9,17 +9,108 @@ import { config } from './config.js';
 import { G, canAfford, spend } from './state.js';
 import { camera, canvas, scene, spawnParticles, addSelRing, removeSelRing,
          worldFromMouse, entityToScreen, resizeRenderer } from './renderer.js';
-import { entityAtWorld, findNearest, findHQ } from './world.js';
-import { updatePanel, hideBuildNotif, setStatusBar } from './ui.js';
+import { entityAtWorld, findNearest, findHQ, moveTo } from './world.js';
+import { getTileType, nearestTrashWithSalvage, getTrashAmount } from './terrain.js';
+import { updatePanel, hideBuildNotif, setStatusBar, triggerHotkey } from './ui.js';
 import { sfxSelect, sfxMove, sfxError } from './sfx.js';
 import { spawnBuilding } from './buildings.js';
 
+// ── Zoom helpers (defined early so keydown can reference them) ──
+const ZOOM_MIN = 25, ZOOM_MAX = 220;
+function _applyZoom(factor) {
+  const next = camera.right * factor;
+  if (next < ZOOM_MIN || next > ZOOM_MAX) return;
+  const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
+  camera.left   = -next;
+  camera.right  =  next;
+  camera.top    =  next / aspect;
+  camera.bottom = -next / aspect;
+  camera.updateProjectionMatrix();
+}
+window._gameZoom = dir => _applyZoom(dir > 0 ? 0.88 : 1.14);
+
 // ── Keyboard state ────────────────────────────────────────
 export const keys = {};
+
 document.addEventListener('keydown', e => {
+  // Don't intercept when typing in a real input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
   keys[e.key] = true;
-  if (e.key === 'Escape') _cancelBuildMode();
+
+  // ── Zoom ─────────────────────────────────────────────────
+  if (e.key === '=' || e.key === '+') { _applyZoom(0.88); return; }
+  if (e.key === '-' || e.key === '_') { _applyZoom(1.14); return; }
+
+  // ── Escape: cancel build / deselect ─────────────────────
+  if (e.key === 'Escape') {
+    if (G.buildMode) { _cancelBuildMode(); return; }
+    G.selection.forEach(en => { en.selected = false; removeSelRing(en); });
+    G.selection = [];
+    updatePanel();
+    return;
+  }
+
+  // ── Ctrl+A: select all player units ─────────────────────
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    G.selection.forEach(en => { en.selected = false; removeSelRing(en); });
+    G.selection = G.entities.filter(en =>
+      en.alive && en.isUnit && en.faction === config.playerFac
+    );
+    G.selection.forEach(en => { en.selected = true; addSelRing(en); });
+    updatePanel();
+    sfxSelect();
+    return;
+  }
+
+  // ── Space: stop all selected units ──────────────────────
+  if (e.key === ' ') {
+    e.preventDefault();
+    G.selection.forEach(en => {
+      if (en.alive && en.isUnit) {
+        en.state = 'idle'; en.targetEnt = null; en.targetX = null;
+        en._path = null;
+      }
+    });
+    setStatusBar('Stop.', true);
+    return;
+  }
+
+  // ── F2/F3/F4: camera jump to base / AI base / center ────
+  if (e.key === 'F2') {
+    const hq = G.entities.find(en => en.alive && en.isBldg && en.subtype === 'hq' && en.faction === config.playerFac);
+    if (hq) { camera.position.x = hq.x; camera.position.z = hq.z; }
+    setStatusBar('Camera → Your Base', true);
+    return;
+  }
+  if (e.key === 'F3') {
+    const hq = G.entities.find(en => en.alive && en.isBldg && en.subtype === 'hq' && en.faction !== config.playerFac && en.faction !== 'neutral');
+    if (hq) { camera.position.x = hq.x; camera.position.z = hq.z; }
+    setStatusBar('Camera → Enemy Base', true);
+    return;
+  }
+  if (e.key === 'F4') {
+    const { WORLD_W: ww, WORLD_H: wh } = { WORLD_W: 240, WORLD_H: 240 };
+    camera.position.x = ww / 2; camera.position.z = wh / 2;
+    setStatusBar('Camera → Center', true);
+    return;
+  }
+
+  // ── ? / H: toggle hotkey library ────────────────────────
+  if (e.key === '?' || (e.key === 'h' && !e.ctrlKey)) {
+    const lib = document.getElementById('hotkey-lib');
+    if (lib) lib.classList.toggle('open');
+    return;
+  }
+
+  // ── Command card hotkeys (forwarded to ui.js) ────────────
+  // Only fire when there's a selection and no modifier keys
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && G.selection.length > 0) {
+    triggerHotkey(e.key.toUpperCase());
+  }
 });
+
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
 // ── Mouse tracking ────────────────────────────────────────
@@ -106,31 +197,53 @@ canvas.addEventListener('mousedown', e => {
     e.preventDefault();
     const clicked = entityAtWorld(wp.x, wp.z);
 
+    // Detect TRASH tile under cursor (no entity hit) for Salvage extraction
+    const T_TRASH = 4;
+    const clickTx = Math.floor(wp.x / TILE), clickTz = Math.floor(wp.z / TILE);
+    const tileUnder = !clicked ? getTileType(clickTx, clickTz) : -1;
+    const clickedTrash = tileUnder === T_TRASH;
+
     for (const ent of G.selection) {
       if (!ent.alive || ent.faction !== config.playerFac || !ent.isUnit) continue;
+
+      // Pre-compute a spread destination for this unit
+      const sx = wp.x + (Math.random() * 2.5 - 1.25);
+      const sz = wp.z + (Math.random() * 2.5 - 1.25);
 
       if (clicked) {
         if (clicked.faction === config.aiFac) {
           ent.targetEnt = clicked;
           ent.state     = 'attacking';
+          moveTo(ent, clicked.x, clicked.z);
         } else if (clicked.isRes && ent.subtype === 'worker') {
           ent.gatherTarget = clicked;
           ent.state        = 'gathering';
+          moveTo(ent, clicked.x, clicked.z);
         } else if (clicked.isBldg && clicked.isBuilding && clicked.faction === config.playerFac && ent.subtype === 'worker') {
           ent.targetEnt = clicked;
           ent.state     = 'build';
+          moveTo(ent, clicked.x, clicked.z);
         } else {
-          // Right-click friendly = move there
-          ent.targetX  = wp.x + (Math.random() * 2.5 - 1.25);
-          ent.targetZ  = wp.z + (Math.random() * 2.5 - 1.25);
-          ent.state    = 'move';
-          ent.targetEnt = null;
+          ent.targetX = sx; ent.targetZ = sz; ent.state = 'move'; ent.targetEnt = null;
+          moveTo(ent, sx, sz);
+        }
+      } else if (clickedTrash && ent.subtype === 'worker' && ent.faction === config.playerFac) {
+        // Workers clear TRASH → get scrap or salvage (2:1), path clears
+        const target = getTrashAmount(clickTx, clickTz) > 0
+          ? { tx: clickTx, tz: clickTz, wx: clickTx * TILE + TILE / 2, wz: clickTz * TILE + TILE / 2 }
+          : nearestTrashWithSalvage(wp.x, wp.z, 20);
+        if (target) {
+          ent.extractTarget  = target;
+          ent._extractReady  = false;
+          ent._extractTimer  = 0;
+          ent.state          = 'extracting';
+          ent.targetEnt      = null;
+          moveTo(ent, target.wx, target.wz);
+          spawnParticles(wp.x, 0.5, wp.z, 0xd4aa20, 6);
         }
       } else {
-        ent.targetX  = wp.x + (Math.random() * 2.5 - 1.25);
-        ent.targetZ  = wp.z + (Math.random() * 2.5 - 1.25);
-        ent.state    = 'move';
-        ent.targetEnt = null;
+        ent.targetX = sx; ent.targetZ = sz; ent.state = 'move'; ent.targetEnt = null;
+        moveTo(ent, sx, sz);
       }
     }
     spawnParticles(wp.x, 0.5, wp.z, 0x22c55e, 5);
@@ -250,23 +363,9 @@ canvas.addEventListener('mouseup', e => {
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 // ── Mouse wheel / trackpad pinch ─────────────────────────
-// On Mac: two-finger scroll = pan, pinch (ctrlKey+wheel) = zoom
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-
-  if (e.ctrlKey) {
-    // Mac pinch-to-zoom or Ctrl+scroll = zoom
-    const z = e.deltaY > 0 ? 1.08 : 0.93;
-    camera.left   *= z; camera.right  *= z;
-    camera.top    *= z; camera.bottom *= z;
-    camera.updateProjectionMatrix();
-  } else {
-    // Plain scroll = zoom (Windows mouse wheel, or Mac scroll wheel)
-    const z = e.deltaY > 0 ? 1.07 : 0.94;
-    camera.left   *= z; camera.right  *= z;
-    camera.top    *= z; camera.bottom *= z;
-    camera.updateProjectionMatrix();
-  }
+  _applyZoom(e.deltaY > 0 ? 1.07 : 0.94);
 }, { passive: false });
 
 // ── Camera WASD / arrow key pan + edge scroll ─────────────

@@ -30,21 +30,23 @@ export const STATUS_H = 18;
 export const HUD_H    = 170;
 
 // ── Lighting ─────────────────────────────────────────────
-// Warcraft uses a bright top-down view — dark ground ≠ dark units.
-// Hemisphere light gives warm sky / cool ground fill so units pop.
-scene.add(new THREE.HemisphereLight(0x8090a0, 0x3a2a10, 1.4));
-scene.add(new THREE.AmbientLight(0x706050, 1.6));
-const dirLight = new THREE.DirectionalLight(0xfff4cc, 2.2);
-dirLight.position.set(80, 140, 60);
+// Sky hemisphere gives warm amber top, cool blue-grey underside.
+// Strong directional key light from NW casts clear shadows on units.
+scene.add(new THREE.HemisphereLight(0xa08860, 0x303828, 1.6));
+scene.add(new THREE.AmbientLight(0x605848, 2.2));
+const dirLight = new THREE.DirectionalLight(0xffe8a0, 2.8);
+dirLight.position.set(80, 160, 60);
 scene.add(dirLight);
-const fillLight = new THREE.DirectionalLight(0x4466aa, 0.6);
+const fillLight = new THREE.DirectionalLight(0x5580bb, 0.8);
 fillLight.position.set(-60, 80, -40);
 scene.add(fillLight);
-scene.fog = new THREE.FogExp2(0x080808, 0.0012);
+// Thin warm haze — visible only at map edges, doesn't darken gameplay area
+scene.fog = new THREE.FogExp2(0x100e08, 0.0006);
 
 // ── Ground ────────────────────────────────────────────────
-// groundMat starts plain; terrain.js will apply a CanvasTexture to it.
-const groundMat = new THREE.MeshLambertMaterial({ color: 0x1a1410 });
+// White color so the CanvasTexture renders at full brightness.
+// Terrain.js will swap in the map texture.
+const groundMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(WORLD_W, WORLD_H, 1, 1),
   groundMat
@@ -53,24 +55,7 @@ ground.rotation.x = -Math.PI / 2;
 ground.position.set(WORLD_W / 2, 0, WORLD_H / 2);
 scene.add(ground);
 
-// Dirt variation patches
-function addGroundDetail() {
-  const patchMat = new THREE.MeshLambertMaterial({ color: 0x2e2210, transparent: true, opacity: 0.45 });
-  for (let i = 0; i < 60; i++) {
-    const w = 4 + Math.random() * 14;
-    const h = 4 + Math.random() * 14;
-    const patch = new THREE.Mesh(new THREE.PlaneGeometry(w, h), patchMat);
-    patch.rotation.x = -Math.PI / 2;
-    patch.position.set(Math.random() * WORLD_W, 0.005, Math.random() * WORLD_H);
-    scene.add(patch);
-  }
-}
-addGroundDetail();
-
-// Grid — slightly visible so map feels real
-const gridHelper = new THREE.GridHelper(WORLD_W, 60, 0x2a2010, 0x1e1608);
-gridHelper.position.set(WORLD_W / 2, 0.01, WORLD_H / 2);
-scene.add(gridHelper);
+// (Ground detail and debug grid removed — terrain.js texture handles all ground visuals)
 
 // Perimeter wall divider
 const perimGeo = new THREE.BoxGeometry(0.4, 8, WORLD_H);
@@ -161,8 +146,9 @@ export function createUnitMesh(ent) {
   ent._onKill   = () => {
     spawnParticles(ent.x, 1.2, ent.z, isScav ? 0xff5500 : 0x4488ff, 20);
     if (ent.mesh)  { scene.remove(ent.mesh);  ent.mesh  = null; }
-    if (ent._hpBar){ scene.remove(ent._hpBar); ent._hpBar = null; }
+    if (ent._hpBar){ scene.remove(ent._hpBar.group); ent._hpBar = null; }
     removeSelRing(ent);
+    addTombstone(ent.x, ent.z);
   };
 }
 
@@ -241,13 +227,14 @@ export function createResourceMesh(ent) {
     return;
   }
 
-  const h = isDump ? 2.8 : 4.0;
+  const h = isDump ? 3.6 : 4.0;
+  // Scrap Dump: obvious orange-gold pile so player can see "gather Scrap here"
   const mat = isDump
-    ? _getEmMat(0x888880, 0x2a2a20, 0.4)
+    ? _getEmMat(0xe8a030, 0x8a5010, 1.0)
     : _getEmMat(0x2266ff, 0x001166, 0.9);
 
   const geo = isDump
-    ? new THREE.ConeGeometry(3.0, h, 8)
+    ? new THREE.ConeGeometry(4.0, h, 8)
     : new THREE.BoxGeometry(5.0, h, 4.0);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(ent.x, h / 2, ent.z);
@@ -255,12 +242,13 @@ export function createResourceMesh(ent) {
   scene.add(mesh);
   ent.mesh = mesh;
 
-  const signCol = isDump ? 0xaaaaaa : 0x55aaff;
+  // Glow disc under Dump so it reads as "right-click to gather Scrap"
+  const signCol = isDump ? 0xf0b040 : 0x55aaff;
   const sign = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.0, 1.0, 0.2, 10),
-    _getEmMat(signCol, signCol, 1.5)
+    new THREE.CylinderGeometry(isDump ? 2.2 : 1.0, isDump ? 2.2 : 1.0, 0.15, 12),
+    _getEmMat(signCol, isDump ? 0xb07010 : signCol, isDump ? 1.8 : 1.5)
   );
-  sign.position.y = h / 2 + 0.1;
+  sign.position.y = 0.08;
   mesh.add(sign);
 
   ent.hpBarY = h + 1.0;
@@ -458,6 +446,81 @@ const _hpColMats = {
 
 function _hpMat(pct) {
   return pct > 0.66 ? _hpColMats.hi : pct > 0.33 ? _hpColMats.med : _hpColMats.lo;
+}
+
+// ── Tombstones (when a unit dies, health bar is removed and a tombstone appears) ──
+const _tombstones = [];
+
+function _makeTombstoneTexture() {
+  const W = 16, H = 24;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  // Dark outline
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(0, 0, W, H);
+  // Grey stone body (pixel-art tombstone shape: rounded top, wide base)
+  ctx.fillStyle = '#4a4a4a';
+  ctx.fillRect(2, 4, 12, 18);
+  ctx.fillRect(3, 2, 10, 4);
+  ctx.fillRect(4, 0, 8, 3);
+  // Highlight
+  ctx.fillStyle = '#6a6a6a';
+  ctx.fillRect(4, 6, 4, 14);
+  ctx.fillRect(5, 3, 2, 3);
+  // Cross or RIP hint (dark)
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(6, 8, 4, 10);
+  ctx.fillRect(5, 12, 6, 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+let _tombstoneTexture = null;
+
+function _tombstoneMesh() {
+  if (!_tombstoneTexture) _tombstoneTexture = _makeTombstoneTexture();
+  const W = 1.0, H = 1.5;
+  const geo = new THREE.PlaneGeometry(W, H);
+  const mat = new THREE.MeshLambertMaterial({
+    map: _tombstoneTexture,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  const plane = new THREE.Mesh(geo, mat);
+  plane.renderOrder = 500;
+  const group = new THREE.Group();
+  group.add(plane);
+  group.position.y = H / 2;
+  return group;
+}
+
+export function addTombstone(x, z) {
+  const group = _tombstoneMesh();
+  group.position.set(x, 0, z);
+  scene.add(group);
+  _tombstones.push(group);
+}
+
+export function clearTombstones() {
+  for (const g of _tombstones) {
+    scene.remove(g);
+    g.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+  }
+  _tombstones.length = 0;
+}
+
+export function tickTombstones() {
+  camera.getWorldDirection(_camDir);
+  for (const group of _tombstones) {
+    group.lookAt(
+      group.position.x - _camDir.x,
+      group.position.y - _camDir.y,
+      group.position.z - _camDir.z
+    );
+  }
 }
 
 function _makeHpBar(barW) {

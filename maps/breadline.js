@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════
 // maps/breadline.js — "The Breadline"  [LOCKED]
-// Narrow horizontal map. Resources cluster at the center queue.
-// Race to control the breadline before the other side does.
 // ═══════════════════════════════════════════════════════════
 
 import { generateBreadline } from '../architect/mapgen.js';
+import { FAC } from '../js/constants.js';
 
 export const MAP_BREADLINE = {
   id:        'breadline',
@@ -13,8 +12,9 @@ export const MAP_BREADLINE = {
   height:    120,
   seed:      4242,
   desc:      '"One queue. Two factions. No sharing."',
-  stats:     '1v1 · ECONOMIC · 64×96 SECTORS',
+  stats:     '1v1 · ECONOMIC · 64×96',
   available: false,
+  playerCount: 2,
 
   _cache: null,
   getTiles() {
@@ -23,8 +23,8 @@ export const MAP_BREADLINE = {
   },
 
   starts: [
-    { faction: 'scav', wx: 20,  wz: 120 },
-    { faction: 'gild', wx: 220, wz: 120 },
+    { faction: FAC.SCAV, wx: 20,  wz: 120 },
+    { faction: FAC.GILD, wx: 220, wz: 120 },
   ],
-  resources: [],
+  resourcePreset: { perBase: { dump: 2, cafe: 1 }, contested: { dump: 2, cafe: 2 } },
 };

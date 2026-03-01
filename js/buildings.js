@@ -10,6 +10,7 @@ import { createBldgMesh, spawnParticles, spawnProjectile } from './renderer.js';
 import { sfxTower, sfxBuild, sfxDeath } from './sfx.js';
 import { spawnUnit } from './units.js';
 import { findNearest } from './world.js';
+import { markBuilding } from './navmesh.js';
 
 export function spawnBuilding(subtype, faction, x, z, instant = false) {
   const def = BLDG_DEFS[subtype];
@@ -39,11 +40,15 @@ export function spawnBuilding(subtype, faction, x, z, instant = false) {
   G.entities.push(ent);
   getRes(faction).popCap += def.foodAdd;
 
-  // Death hook — remove food cap
+  // Bake into nav grid immediately so pathfinding avoids this building
+  markBuilding(x, z, def.size, true);
+
+  // Death hook — remove food cap and unblock nav grid
   const origKill = ent._onKill;
   ent._onKill = () => {
     origKill?.call(ent);
     getRes(faction).popCap = Math.max(0, getRes(faction).popCap - def.foodAdd);
+    markBuilding(ent.x, ent.z, ent.size, false);
   };
 
   return ent;

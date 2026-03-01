@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
-  FAC, BLDG_DEFS, UNIT_DEFS, PORTRAITS,
+  FAC, BLDG_DEFS, UNIT_DEFS, PORTRAITS, getUnitCost,
   CMD_BY_UNIT, CMD_WORKER, CMD_WORKER_GILD,
   UNIT_DESCS, UNIT_DESCS_GILD, WORLD_W, WORLD_H,
 } from './constants.js';
@@ -47,6 +47,7 @@ const elValProd     = $('val-prod');
 const elSAtk   = $('s-atk');
 const elSRng   = $('s-rng');
 const elSState = $('s-state');
+// s-arm, s-spd, s-pop fetched inline (added in redesign)
 const elDesc   = $('pane-desc');
 
 // 9 command buttons
@@ -82,16 +83,39 @@ export function hideBuildNotif() {
   elBuildNotif.style.display = 'none';
 }
 
+// ── Prerequisite check ───────────────────────────────────
+// Returns null if OK, or a string "Requires: X" if locked.
+function _prerequisiteMsg(action) {
+  if (!action?.startsWith('build:')) return null;
+  const bType = action.split(':')[1];
+  const bd    = BLDG_DEFS[bType];
+  if (!bd?.requires?.length) return null;
+
+  for (const req of bd.requires) {
+    const has = G.entities.some(e =>
+      e.alive && e.isBldg &&
+      e.subtype === req &&
+      e.faction === config.playerFac &&
+      !e.isBuilding    // must be fully built
+    );
+    if (!has) {
+      const reqDef = BLDG_DEFS[req];
+      const label  = reqDef ? reqDef.label[config.playerFac === FAC.GILD ? 1 : 0] : req;
+      return `Requires: ${label}`;
+    }
+  }
+  return null;
+}
+
 // ── Command card (3×3 grid) ───────────────────────────────
-// Mirrors Warcraft's GameButton.SetAction()
 function fillCmdCard(cmds, ent) {
   cmdBtns.forEach((btn, i) => {
     const def = cmds?.[i] ?? null;
 
     // Reset btn
-    btn.className   = 'cmd-btn';
-    btn.disabled    = false;
-    btn.onclick     = null;
+    btn.className    = 'cmd-btn';
+    btn.disabled     = false;
+    btn.onclick      = null;
     btn.onmouseenter = null;
     btn.onmouseleave = null;
     btn.querySelector('.hotkey').textContent    = '';
@@ -112,18 +136,35 @@ function fillCmdCard(cmds, ent) {
     if (def.cost) {
       const cs = document.createElement('span');
       cs.className   = 'cmd-cost';
-      cs.textContent = `${def.cost[0]}/${def.cost[1]}`;
+      cs.textContent = `${def.cost[0]}♻ ${def.cost[1]}⚙`;
       btn.appendChild(cs);
     }
 
+    // Check prerequisites — show lock before checking affordability
+    const prereqMsg = _prerequisiteMsg(def.action);
+    if (prereqMsg) {
+      btn.classList.add('cmd-locked');
+      btn.disabled = true;
+      btn.onmouseenter = () => setStatusBar(
+        `<span style="color:#e04040">${def.label}</span> — 🔒 ${prereqMsg}`
+      );
+      btn.onmouseleave = () => setStatusBar('Select a unit or building...');
+      return;
+    }
+
     // Disable if can't afford or pop-capped
-    const ok = def.cost ? canAfford(config.playerFac, def.cost) : true;
+    const ok    = def.cost ? canAfford(config.playerFac, def.cost) : true;
     const popOk = def.action?.startsWith('train:') ? G.player.pop < G.player.popCap : true;
     btn.disabled = !ok || !popOk;
 
-    btn.onmouseenter = () => setStatusBar(
-      `<span>${def.label}</span> — ${_actionDesc(def.action, def.cost)}`
-    );
+    const statusMsg = () => {
+      const desc = _actionDesc(def.action, def.cost);
+      const warn = !ok ? ' <span style="color:#e04040">— Can\'t afford</span>'
+                 : !popOk ? ' <span style="color:#e04040">— Pop cap reached</span>' : '';
+      return `<span>${def.label}</span> — ${desc}${warn}`;
+    };
+
+    btn.onmouseenter = () => setStatusBar(statusMsg());
     btn.onmouseleave = () => setStatusBar('Select a unit or building...');
     btn.onclick      = () => _handleCmd(def, ent);
   });
@@ -132,14 +173,21 @@ function fillCmdCard(cmds, ent) {
 function _actionDesc(action, cost) {
   if (!action) return '';
   if (action.startsWith('train:')) {
-    return cost ? `Train unit (${cost[0]} Scrap / ${cost[1]} Salvage)` : 'Train unit';
+    return cost ? `Train unit — <span style="color:#e8c060">${cost[0]}♻ ${cost[1]}⚙</span>` : 'Train unit';
   }
   if (action.startsWith('build:')) {
     const bType = action.split(':')[1];
     const bd    = BLDG_DEFS[bType];
-    return bd ? `Build ${bd.label[0]} — ${bd.cost[0]} Scrap / ${bd.cost[1]} Salvage` : '';
+    if (!bd) return '';
+    const req = bd.requires?.length ? ` | Needs: ${bd.requires.map(r => BLDG_DEFS[r]?.label[0] ?? r).join(', ')}` : '';
+    return `Build — <span style="color:#e8c060">${bd.cost[0]}♻ ${bd.cost[1]}⚙</span>${req}`;
   }
-  return { 'stop':'Stop current action', 'attack-move':'Right-click to attack', 'move':'Right-click to move', 'cancel-prod':'Cancel current production' }[action] || action;
+  return {
+    'stop':         'Stop current action',
+    'attack-move':  'Attack-move — right-click enemy to attack',
+    'move':         'Move — right-click to move',
+    'cancel-prod':  'Cancel current production',
+  }[action] || action;
 }
 
 function _handleCmd(def, ent) {
@@ -149,8 +197,9 @@ function _handleCmd(def, ent) {
   if (action.startsWith('train:')) {
     const ut   = action.split(':')[1];
     const udef = UNIT_DEFS[ut];
-    if (!ent || !canAfford(config.playerFac, udef.cost) || G.player.pop >= G.player.popCap) return;
-    spend(config.playerFac, udef.cost);
+    const cost = getUnitCost(ut, config.playerFac);
+    if (!ent || !canAfford(config.playerFac, cost) || G.player.pop >= G.player.popCap) return;
+    spend(config.playerFac, cost);
     ent.prodQueue.push(ut);
     setStatusBar(`<span>Training ${udef.label[0]}...</span>`, true);
     updatePanel();
@@ -193,7 +242,7 @@ function _buildingCmds(ent) {
     const udef = UNIT_DEFS[ut];
     cmds[i] = {
       icon: ICONS[ut] || '?', label: udef.label[0],
-      key: KEYS[ut]   || '?', cost: udef.cost,
+      key: KEYS[ut]   || '?', cost: getUnitCost(ut, ent.faction),
       action: `train:${ut}`,
     };
   });
@@ -215,13 +264,21 @@ function _updatePortrait(ent) {
   elUnitName.className   = isGild ? 'gilded' : '';
   elUnitName.textContent = ent.label().toUpperCase();
 
-  // HP bar — green/yellow/red like Warcraft's hitPointColors array
-  const hpPct = ent.hp / ent.maxHp;
-  elBarHp.style.width     = (hpPct * 100) + '%';
-  elBarHp.className       = 'bar-fill ' + (hpPct > 0.66 ? 'hp-high' : hpPct > 0.33 ? 'hp-med' : 'hp-low');
-  elValHp.textContent     = `${ent.hp}/${ent.maxHp}`;
+  // State badge under portrait — colour-coded like SC
+  const badge = document.getElementById('portrait-badge');
+  if (badge) {
+    const st = ent.state || 'idle';
+    badge.textContent = st.toUpperCase();
+    badge.className   = `st-${st.replace('-return','').replace('extract-','extract')}`;
+  }
 
-  // Resource remaining bar (for resource nodes)
+  // HP bar
+  const hpPct = ent.hp / ent.maxHp;
+  elBarHp.style.width = (hpPct * 100) + '%';
+  elBarHp.className   = 'bar-fill ' + (hpPct > 0.66 ? 'hp-high' : hpPct > 0.33 ? 'hp-med' : 'hp-low');
+  elValHp.textContent = `${ent.hp} / ${ent.maxHp}`;
+
+  // Resource remaining (nodes)
   if (ent.isRes) {
     elRowMp.style.display = 'flex';
     const rPct = ent.hp / ent.maxHp;
@@ -231,22 +288,29 @@ function _updatePortrait(ent) {
     elRowMp.style.display = 'none';
   }
 
-  // Production progress bar
+  // Production progress (buildings)
   if (ent.isBldg && ent.prodQueue.length > 0 && ent.prodMax > 0) {
     elRowProd.style.display = 'flex';
-    const pPct              = ent.prodTimer / ent.prodMax;
+    const pPct = ent.prodTimer / ent.prodMax;
     elBarProd.style.width   = (pPct * 100) + '%';
     elValProd.textContent   = `Q:${ent.prodQueue.length}`;
   } else {
     elRowProd.style.display = 'none';
   }
 
-  // Stats
-  elSAtk.textContent   = ent.atk || '—';
-  elSRng.textContent   = ent.atkRange > 2 ? ent.atkRange.toFixed(0) : 'MEL';
-  elSState.textContent = ent.state.toUpperCase();
+  // 2×3 stat grid
+  const elArm = $('s-arm'), elSpd = $('s-spd'), elPop = $('s-pop');
+  elSAtk.textContent  = ent.atk    ? `${ent.atk}` : '—';
+  elSRng.textContent  = ent.atkRange > 2 ? `${ent.atkRange.toFixed(0)}` : 'MEL';
+  elSState.textContent = (ent.state || '—').toUpperCase();
+  if (elArm) elArm.textContent = ent.armor != null ? `${ent.armor}` : '0';
+  if (elSpd) elSpd.textContent = ent.speed ? `${ent.speed.toFixed(1)}` : '—';
+  if (elPop) {
+    const uDef = UNIT_DEFS[ent.subtype];
+    elPop.textContent = uDef ? `${uDef.pop}` : '—';
+  }
 
-  // Description — Gilded units use their own flavour text
+  // Description
   const descTable = ent.faction === FAC.GILD ? UNIT_DESCS_GILD : UNIT_DESCS;
   elDesc.textContent = descTable[ent.subtype] || UNIT_DESCS[ent.subtype] || '';
 }
@@ -414,6 +478,23 @@ export function drawMinimap() {
   mctx.strokeStyle = 'rgba(200,180,120,.75)';
   mctx.lineWidth   = 1;
   mctx.strokeRect(cL, cT, cR - cL, cB - cT);
+}
+
+// ── Hotkey dispatch ───────────────────────────────────────
+// Called from input.js keydown with the pressed key (uppercase).
+// Scans the currently-visible command card for a matching def.key
+// and fires its action — exactly like WC2's GameButton key bindings.
+export function triggerHotkey(key) {
+  if (!key) return;
+
+  // Collect the active command card buttons
+  const hits = cmdBtns.filter(btn => {
+    if (btn.classList.contains('cmd-empty') || btn.disabled) return false;
+    const hk = btn.querySelector('.hotkey')?.textContent?.toUpperCase();
+    return hk === key;
+  });
+  if (hits.length === 0) return;
+  hits[0].click();   // fire the first matching button's onclick
 }
 
 // Minimap click → pan camera

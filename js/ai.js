@@ -8,16 +8,14 @@
 
 import { FAC, BLDG_DEFS, UNIT_DEFS } from './constants.js';
 import { config } from './config.js';
+import { getUnitCost } from './constants.js';
 import { G, canAfford, spend } from './state.js';
 import { spawnBuilding } from './buildings.js';
 import { spawnUnit } from './units.js';
 import { findHQ, findNearest, dist } from './world.js';
+import { nearestTrashWithSalvage } from './terrain.js';
 
-// ── Worker management (UnitTraitMiner.cs pattern) ────────
-// Any idle AI worker is immediately reassigned to the nearest
-// resource node — same loop as the reference miner coroutine.
-// Workers are split: scrap gatherers go to dumps, salvage to cafes.
-// If scrap reserves are low (common — most units need scrap), bias toward dumps.
+// ── Worker management: most clear TRASH (scrap/salvage 2:1), rest hit dumps/cafes ──
 function _manageWorkers() {
   const ai = G.ai;
 
@@ -25,15 +23,20 @@ function _manageWorkers() {
     if (!w.alive || !w.isUnit || w.faction !== config.aiFac) continue;
     if (w.subtype !== 'worker' || w.state !== 'idle') continue;
 
-    // Adaptive dispatch: gather whichever resource the AI needs more.
-    // Scrap drives unit production; salvage drives tech buildings.
-    const needsScrap = ai.scrap < ai.salvage * 1.5;
-    const primary    = needsScrap ? 'dump'      : 'cafe';
-    const secondary  = needsScrap ? 'cafe'      : 'dump';
+    // Prefer TRASH so most workers clear paths (get scrap 2× more often than salvage)
+    const trash = nearestTrashWithSalvage(w.x, w.z, 50);
+    if (trash) {
+      w.extractTarget = trash;
+      w.state = 'extracting';
+      continue;
+    }
 
+    const needsScrap = ai.scrap < ai.salvage * 1.5;
+    const primary   = needsScrap ? 'dump' : 'cafe';
+    const secondary = needsScrap ? 'cafe' : 'dump';
     const target = findNearest(w, o => o.isRes && o.subtype === primary   && o.alive, 300)
-                || findNearest(w, o => o.isRes && o.subtype === secondary  && o.alive, 300)
-                || findNearest(w, o => o.isRes && o.subtype === 'deptstore'&& o.alive, 300)
+                || findNearest(w, o => o.isRes && o.subtype === secondary && o.alive, 300)
+                || findNearest(w, o => o.isRes && o.subtype === 'deptstore' && o.alive, 300)
                 || findNearest(w, o => o.isRes && o.alive, 300);
     if (target) { w.gatherTarget = target; w.state = 'gathering'; }
   }
@@ -207,8 +210,9 @@ export function updateAI(dt) {
       ut = Math.random() < 0.35 ? 'caster' : null;
     }
 
-    if (ut && canAfford(config.aiFac, UNIT_DEFS[ut].cost)) {
-      spend(config.aiFac, UNIT_DEFS[ut].cost);
+    const cost = getUnitCost(ut, config.aiFac);
+    if (ut && canAfford(config.aiFac, cost)) {
+      spend(config.aiFac, cost);
       b.prodQueue.push(ut);
     }
   }

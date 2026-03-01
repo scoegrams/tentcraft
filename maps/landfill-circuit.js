@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════
 // maps/landfill-circuit.js — "Landfill Circuit"  [LOCKED]
-// A circular landfill bisected by a sludge moat.
-// Control the center to win; let it fall and you starve.
 // ═══════════════════════════════════════════════════════════
 
 import { generateLandfillCircuit } from '../architect/mapgen.js';
+import { FAC } from '../js/constants.js';
 
 export const MAP_LANDFILL_CIRCUIT = {
   id:        'landfill-circuit',
@@ -13,8 +12,9 @@ export const MAP_LANDFILL_CIRCUIT = {
   height:    120,
   seed:      8888,
   desc:      '"Control the circuit or starve. Three dumps, one path."',
-  stats:     '1v1 · CONTESTED · 96×96 SECTORS',
+  stats:     '1v1 · CONTESTED · 96×96',
   available: false,
+  playerCount: 2,
 
   _cache: null,
   getTiles() {
@@ -23,8 +23,8 @@ export const MAP_LANDFILL_CIRCUIT = {
   },
 
   starts: [
-    { faction: 'scav', wx: 16,  wz: 120 },
-    { faction: 'gild', wx: 224, wz: 120 },
+    { faction: FAC.SCAV, wx: 16,  wz: 120 },
+    { faction: FAC.GILD, wx: 224, wz: 120 },
   ],
-  resources: [],
+  resourcePreset: { perBase: { dump: 2, cafe: 1 }, contested: { dump: 3, cafe: 2 } },
 };
