@@ -8,11 +8,15 @@ import { FAC, BLDG_DEFS, TILE, WORLD_W, WORLD_H } from './constants.js';
 import { config } from './config.js';
 import { G, canAfford, spend } from './state.js';
 import { camera, canvas, scene, spawnParticles, addSelRing, removeSelRing,
-         worldFromMouse, entityToScreen, resizeRenderer } from './renderer.js';
+         worldFromMouse, entityToScreen, resizeRenderer,
+         spawnAttackMarker, setTargetRing, clearTargetRing,
+         spawnMoveWaypoint, setRallyFlag, removeRallyFlag, spawnRallyConfirm } from './renderer.js';
 import { entityAtWorld, findNearest, findHQ, moveTo } from './world.js';
 import { getTileType, nearestTrashWithSalvage, getTrashAmount } from './terrain.js';
+import { assignExtractTarget, unloadTransport } from './units.js';
 import { updatePanel, hideBuildNotif, setStatusBar, triggerHotkey } from './ui.js';
-import { sfxSelect, sfxMove, sfxError } from './sfx.js';
+import { sfxSelect, sfxMove, sfxError,
+         sfxVoiceSelect, sfxVoiceMove, sfxVoiceAttack } from './sfx.js';
 import { spawnBuilding } from './buildings.js';
 
 // ── Zoom helpers (defined early so keydown can reference them) ──
@@ -77,6 +81,22 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  // ── H / Home: jump to HQ and select it ─────────────────
+  if (e.key === 'Home' || (e.key.toUpperCase() === 'H' && !e.ctrlKey && !e.metaKey)) {
+    const hq = G.entities.find(en => en.alive && en.isBldg && en.subtype === 'hq' && en.faction === config.playerFac);
+    if (hq) {
+      camera.position.x = hq.x;
+      camera.position.z = hq.z + 60;
+      G.selection.forEach(en => { en.selected = false; removeSelRing(en); });
+      G.selection = [hq];
+      hq.selected = true;
+      updatePanel();
+      clearTargetRing();
+      setStatusBar('Command Center selected.', true);
+    }
+    return;
+  }
+
   // ── F2/F3/F4: camera jump to base / AI base / center ────
   if (e.key === 'F2') {
     const hq = G.entities.find(en => en.alive && en.isBldg && en.subtype === 'hq' && en.faction === config.playerFac);
@@ -97,8 +117,14 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  // ── ? / H: toggle hotkey library ────────────────────────
-  if (e.key === '?' || (e.key === 'h' && !e.ctrlKey)) {
+  // ── I: cycle through idle workers ───────────────────────
+  if (e.key.toUpperCase() === 'I' && !e.ctrlKey && !e.metaKey) {
+    window._cycleIdleWorker?.();
+    return;
+  }
+
+  // ── ?: toggle hotkey library ─────────────────────────────
+  if (e.key === '?') {
     const lib = document.getElementById('hotkey-lib');
     if (lib) lib.classList.toggle('open');
     return;
@@ -197,56 +223,105 @@ canvas.addEventListener('mousedown', e => {
     e.preventDefault();
     const clicked = entityAtWorld(wp.x, wp.z);
 
-    // Detect TRASH tile under cursor (no entity hit) for Salvage extraction
+    // ── Rally point — right-click with any producing building selected ──
+    // Set rally on all producing buildings in the selection, then fall through
+    // to issue move orders to any units also in the selection (WC2 behaviour).
+    let rallySet = false;
+    for (const b of G.selection) {
+      if (!b.alive || !b.isBldg || b.isBuilding) continue;
+      if (b.faction !== config.playerFac) continue;
+      if (!BLDG_DEFS[b.subtype]?.produces?.length) continue;
+      b.rallyX = wp.x; b.rallyZ = wp.z;
+      setRallyFlag(b);
+      rallySet = true;
+    }
+    if (rallySet) {
+      spawnRallyConfirm(wp.x, wp.z);
+      setStatusBar('Rally point set — new units will march here.', true);
+      // If selection is ONLY buildings, stop here; otherwise fall through to move units too
+      if (G.selection.every(e => e.isBldg)) return;
+    }
+
+    // ── Board transport — right-click a friendly transport with units selected ──
+    if (clicked && clicked.isUnit && clicked.subtype === 'transport' &&
+        clicked.faction === config.playerFac && clicked.alive) {
+      let boarded = 0;
+      for (const ent of G.selection) {
+        if (!ent.alive || !ent.isUnit || ent === clicked) continue;
+        if (ent.subtype === 'transport' || ent.boarded) continue;
+        if (clicked.cargo.length + boarded >= clicked.capacity) break;
+        ent.boardTarget = clicked;
+        ent.state       = 'boarding';
+        ent._path = null; ent._pathDest = null;
+        boarded++;
+      }
+      if (boarded > 0) {
+        spawnMoveWaypoint(clicked.x, clicked.z);
+        setStatusBar(`${boarded} unit${boarded > 1 ? 's' : ''} boarding the Sprinter — ${clicked.capacity - clicked.cargo.length - boarded} slots remaining.`, true);
+        return;
+      }
+    }
+
     const T_TRASH = 4;
     const clickTx = Math.floor(wp.x / TILE), clickTz = Math.floor(wp.z / TILE);
     const tileUnder = !clicked ? getTileType(clickTx, clickTz) : -1;
     const clickedTrash = tileUnder === T_TRASH;
 
+    let attackIssued = false;
+    let moveIssued   = false;
+
     for (const ent of G.selection) {
       if (!ent.alive || ent.faction !== config.playerFac || !ent.isUnit) continue;
 
-      // Pre-compute a spread destination for this unit
       const sx = wp.x + (Math.random() * 2.5 - 1.25);
       const sz = wp.z + (Math.random() * 2.5 - 1.25);
 
       if (clicked) {
-        if (clicked.faction === config.aiFac) {
+        if (clicked.faction !== config.playerFac && clicked.faction !== 'neutral' && !clicked.isRes) {
           ent.targetEnt = clicked;
           ent.state     = 'attacking';
+          ent._path = null; ent._pathDest = null;
           moveTo(ent, clicked.x, clicked.z);
+          attackIssued = true;
         } else if (clicked.isRes && ent.subtype === 'worker') {
           ent.gatherTarget = clicked;
           ent.state        = 'gathering';
           moveTo(ent, clicked.x, clicked.z);
+          moveIssued = true;
         } else if (clicked.isBldg && clicked.isBuilding && clicked.faction === config.playerFac && ent.subtype === 'worker') {
           ent.targetEnt = clicked;
           ent.state     = 'build';
           moveTo(ent, clicked.x, clicked.z);
+          moveIssued = true;
         } else {
           ent.targetX = sx; ent.targetZ = sz; ent.state = 'move'; ent.targetEnt = null;
           moveTo(ent, sx, sz);
+          moveIssued = true;
         }
       } else if (clickedTrash && ent.subtype === 'worker' && ent.faction === config.playerFac) {
-        // Workers clear TRASH → get scrap or salvage (2:1), path clears
         const target = getTrashAmount(clickTx, clickTz) > 0
           ? { tx: clickTx, tz: clickTz, wx: clickTx * TILE + TILE / 2, wz: clickTz * TILE + TILE / 2 }
           : nearestTrashWithSalvage(wp.x, wp.z, 20);
         if (target) {
-          ent.extractTarget  = target;
-          ent._extractReady  = false;
-          ent._extractTimer  = 0;
-          ent.state          = 'extracting';
-          ent.targetEnt      = null;
-          moveTo(ent, target.wx, target.wz);
-          spawnParticles(wp.x, 0.5, wp.z, 0xd4aa20, 6);
+          assignExtractTarget(ent, target);
+          moveIssued = true;
         }
       } else {
         ent.targetX = sx; ent.targetZ = sz; ent.state = 'move'; ent.targetEnt = null;
         moveTo(ent, sx, sz);
+        moveIssued = true;
       }
     }
-    spawnParticles(wp.x, 0.5, wp.z, 0x22c55e, 5);
+
+    if (attackIssued && clicked) {
+      spawnAttackMarker(clicked.x, clicked.z);
+      setTargetRing(clicked);
+      if (config.playerFac === FAC.SCAV) sfxVoiceAttack();
+    } else if (moveIssued) {
+      clearTargetRing();
+      spawnMoveWaypoint(wp.x, wp.z);
+      if (config.playerFac === FAC.SCAV) sfxVoiceMove();
+    }
     if (G.selection.some(e => e.isUnit)) sfxMove();
   }
 });
@@ -285,6 +360,19 @@ canvas.addEventListener('mousemove', e => {
     selBox.style.cssText = `display:block;left:${sx}px;top:${sy}px;width:${sw}px;height:${sh}px`;
   }
 
+  // Attack cursor when hovering over enemies while units are selected
+  if (!G.isDragging && !G.buildMode) {
+    const hovered = entityAtWorld(wp.x, wp.z);
+    const hasUnits = G.selection.some(u => u.isUnit && u.faction === config.playerFac);
+    if (hasUnits && hovered && hovered.faction !== config.playerFac && hovered.faction !== 'neutral' && !hovered.isRes) {
+      canvas.style.cursor = 'crosshair';
+    } else if (G.buildMode) {
+      canvas.style.cursor = 'cell';
+    } else {
+      canvas.style.cursor = 'default';
+    }
+  }
+
   // Build ghost follows cursor
   if (G.buildMode) {
     if (!G.buildGhost) {
@@ -321,6 +409,7 @@ canvas.addEventListener('mouseup', e => {
   const maxSY  = Math.max(G.dragStart.y, G.dragCurrent.y);
   const isClick = (maxSX - minSX < 6) && (maxSY - minSY < 6);
 
+  clearTargetRing();
   G.selection = [];
 
   for (const ent of G.entities) {
@@ -337,10 +426,15 @@ canvas.addEventListener('mouseup', e => {
       if (hit && ent.isBldg && ent.subtype === 'hq') hit = false;
     }
 
-    const selectable = ent.faction === config.playerFac || (isClick && ent.isRes);
+    // Box-drag: only player's own entities.
+    // Single click: also allow enemy units/buildings for inspection.
+    const isEnemy = ent.faction !== config.playerFac && !ent.isRes && ent.faction !== 'neutral';
+    const selectable = ent.faction === config.playerFac
+      || (isClick && ent.isRes)
+      || (isClick && isEnemy && (ent.isUnit || ent.isBldg));
     if (hit && selectable) {
       ent.selected = true;
-      addSelRing(ent);
+      addSelRing(ent, isEnemy ? 0xff2222 : undefined);
       G.selection.push(ent);
     }
   }
@@ -356,7 +450,15 @@ canvas.addEventListener('mouseup', e => {
     }
   }
 
-  if (G.selection.length > 0) sfxSelect();
+  if (G.selection.length > 0) {
+    sfxSelect();
+    // SCAV character voice on selection (Piper / worker only — with cooldown)
+    const scavSel = G.selection.find(e => e.alive && e.isUnit && e.faction === config.playerFac
+      && (e.subtype === 'infantry' || e.subtype === 'worker' || e.subtype === 'ranged'));
+    if (scavSel && config.playerFac === FAC.SCAV) {
+      sfxVoiceSelect(scavSel.subtype);
+    }
+  }
   updatePanel();
 });
 

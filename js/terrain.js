@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { TILE, MAP_W, MAP_H } from './constants.js';
 import { T, T_PASSABLE } from '../architect/mapgen.js';
-import { scene } from './renderer.js';
+import { scene, setSceneTheme } from './renderer.js';
 
 // ── Module state ─────────────────────────────────────────
 let _tiles  = null;  // Uint8Array — current map tile data
@@ -19,15 +19,28 @@ let _mapW   = MAP_W;
 let _mapH   = MAP_H;
 const _terrainMeshes = [];  // meshes to dispose when map changes
 
-// ── Base tile RGB values ──────────────────────────────────
-// These must be clearly distinguishable from each other.
-const TILE_RGB = {
+// ── Tile palettes ───────────────────────────────────────
+const PALETTE_DEFAULT = {
   [T.CONCRETE]: [30, 25, 18],   // Warm dark asphalt
   [T.CRACKED]:  [58, 50, 36],   // Noticeably lighter road/path
   [T.SLUDGE]:   [42, 40, 52],   // Blue-grey urban street (city ruins)
   [T.RUBBLE]:   [46, 44, 40],   // Cool grey debris
-  [T.TRASH]:    [82, 58, 18],   // Yellow-orange sludge under tiles of trash (collectible)
+  [T.TRASH]:    [82, 58, 18],   // Yellow-orange sludge under tiles of trash
 };
+const PALETTE_SNOW = {
+  [T.CONCRETE]: [76, 80, 88],   // Plowed dark road through snow
+  [T.CRACKED]:  [180, 192, 204], // Fresh snow — grey-blue like WC2 winter
+  [T.SLUDGE]:   [80, 128, 176],  // Frozen river / deep ice blue
+  [T.RUBBLE]:   [96, 100, 108],  // Frozen stone rubble
+  [T.TRASH]:    [38, 62, 38],    // Dark pine-green forest floor
+};
+let TILE_RGB = PALETTE_DEFAULT;
+
+let _currentTheme = 'default';
+export function setTerrainTheme(theme) {
+  _currentTheme = theme;
+  TILE_RGB = theme === 'snow' ? PALETTE_SNOW : PALETTE_DEFAULT;
+}
 
 // ── Ground texture from tile data ────────────────────────
 // Renders at SCALE pixels per tile so we can paint noise and
@@ -70,38 +83,52 @@ export function buildGroundTexture(tiles, mapW, mapH) {
           let g = bg + (n  - 0.5) * 14;
           let b = bb + (n2 - 0.5) * 12;
 
-          if (t === T.CRACKED) {
-            // Crack grooves along tile edges
-            if (dx === 0 || dy === 0) { r *= 0.55; g *= 0.55; b *= 0.55; }
-            // Gravel specks
-            if (n3 > 0.82) { r += 18; g += 15; b += 10; }
-
-          } else if (t === T.TRASH) {
-            // Yellow-orange sludge ground under tiles of trash (brown disks are 3D)
-            if (n3 > 0.70) { r += 14; g += 10; b -= 4; }   // lighter sludge patch
-            if (n2 > 0.82) { r -= 6;  g -= 4;  b -= 6; }   // shadow
-
-          } else if (t === T.SLUDGE) {
-            // Urban street: regular tile-grid lines simulate road markings
-            if (dx === 0 || dy === 0) { r -= 12; g -= 12; b -= 10; }  // street grid
-            // Worn paint / weathered asphalt
-            if (n3 > 0.78) { r += 10; g += 10; b += 18; }  // cool blue highlight
-            if (n2 > 0.86) { r -= 10; g -= 10; b -= 8; }   // oil stain dark patch
-            // Occasional faded yellow centre line
-            if (dy === 2 && n > 0.60 && n < 0.62) { r += 30; g += 22; b -= 10; }
-
-          } else if (t === T.RUBBLE) {
-            // Concrete chunk highlights
-            if (n3 > 0.74) { r += 18; g += 16; b += 14; }
-            // Deep shadow gaps
-            if (n2 > 0.85) { r -= 14; g -= 14; b -= 14; }
-            // Cool dust variation
-            if (n > 0.5)   { b += 4; }
-
+          if (_currentTheme === 'snow') {
+            // ── Snow palette per-pixel detail ──
+            if (t === T.CRACKED) {
+              // Snow drifts: sparkle highlights
+              if (n3 > 0.80) { r += 20; g += 22; b += 24; }
+              if (n2 > 0.88) { r -= 8;  g -= 6;  b -= 4; } // shadow
+              if (dx === 0 && n > 0.7) { r -= 12; g -= 10; b -= 8; } // footprint groove
+            } else if (t === T.TRASH) {
+              // Pine forest floor: mossy green variation
+              if (n3 > 0.68) { r += 8;  g += 14; b += 6; }
+              if (n2 > 0.80) { r -= 8;  g -= 4;  b -= 8; }
+              if (n > 0.85)  { r += 4;  g += 8;  b -= 2; } // lighter needle
+            } else if (t === T.SLUDGE) {
+              // Frozen river: ice shine + cracks
+              if (n3 > 0.75) { r += 16; g += 18; b += 22; } // ice glint
+              if (n2 > 0.82) { r -= 14; g -= 10; b -= 6; }  // deep ice
+              if (dx === 0 && dy === 2 && n > 0.55) { r -= 20; g -= 16; b -= 10; } // crack
+            } else if (t === T.RUBBLE) {
+              if (n3 > 0.72) { r += 14; g += 16; b += 18; } // frost
+              if (n2 > 0.84) { r -= 12; g -= 12; b -= 10; }
+            } else {
+              // CONCRETE = plowed road
+              if (n3 > 0.78) { r += 8; g += 8; b += 10; }
+              if (n2 > 0.86) { r -= 6; g -= 4; b -= 2; }
+            }
           } else {
-            // CONCRETE: subtle warm oil-stain variation
-            if (n3 > 0.8)  { r += 10; g += 7; b += 4; }
-            if (n2 > 0.88) { r += 6;  g -= 2; b -= 4; }  // rust stain
+            // ── Default (urban/dystopian) palette detail ──
+            if (t === T.CRACKED) {
+              if (dx === 0 || dy === 0) { r *= 0.55; g *= 0.55; b *= 0.55; }
+              if (n3 > 0.82) { r += 18; g += 15; b += 10; }
+            } else if (t === T.TRASH) {
+              if (n3 > 0.70) { r += 14; g += 10; b -= 4; }
+              if (n2 > 0.82) { r -= 6;  g -= 4;  b -= 6; }
+            } else if (t === T.SLUDGE) {
+              if (dx === 0 || dy === 0) { r -= 12; g -= 12; b -= 10; }
+              if (n3 > 0.78) { r += 10; g += 10; b += 18; }
+              if (n2 > 0.86) { r -= 10; g -= 10; b -= 8; }
+              if (dy === 2 && n > 0.60 && n < 0.62) { r += 30; g += 22; b -= 10; }
+            } else if (t === T.RUBBLE) {
+              if (n3 > 0.74) { r += 18; g += 16; b += 14; }
+              if (n2 > 0.85) { r -= 14; g -= 14; b -= 14; }
+              if (n > 0.5)   { b += 4; }
+            } else {
+              if (n3 > 0.8)  { r += 10; g += 7; b += 4; }
+              if (n2 > 0.88) { r += 6;  g -= 2; b -= 4; }
+            }
           }
 
           const i = (py * cw + px) * 4;
@@ -185,15 +212,16 @@ function _trashCluster(wx, wz) {
   }
 }
 
-// Rubble pile — collapsed concrete chunks
+// Rubble pile — collapsed concrete chunks (frosted on snow maps)
 function _rubbleCluster(wx, wz) {
+  const snow = _currentTheme === 'snow';
   const count = 2 + Math.floor(_rng() * 3);
   for (let i = 0; i < count; i++) {
     const ox = _r(-0.7, 0.7), oz = _r(-0.7, 0.7);
     const s  = _r(0.4, 1.0);
     const chunk = new THREE.Mesh(
       new THREE.BoxGeometry(s * _r(0.8, 1.6), s * _r(0.4, 0.9), s * _r(0.8, 1.4)),
-      _mat(0x2a2620, 0x0a0806, 0.1)
+      snow ? _mat(0x8090a0, 0x506070, 0.12) : _mat(0x2a2620, 0x0a0806, 0.1)
     );
     chunk.position.set(wx + ox, s * 0.25, wz + oz);
     chunk.rotation.set(_r(-0.3, 0.3), _r(0, Math.PI), _r(-0.2, 0.2));
@@ -205,7 +233,37 @@ function _rubbleCluster(wx, wz) {
 // Tiles of trash — discrete collectible “stumps” like chopping trees.
 // One TRASH tile = one tile of trash; when worker collects it, it disappears and salvage goes to Extractor.
 function _salvageHeap(wx, wz) {
-  // Main tile-of-trash: brown disk/stump (low-poly, like WC tree stumps)
+  if (_currentTheme === 'snow') {
+    // Pine tree — cone (canopy) on a thin cylinder trunk, with snow caps
+    const trunkH = _r(0.6, 1.0);
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.15, trunkH, 5),
+      _mat(0x4a3020, 0x2a1808, 0.1)
+    );
+    trunk.position.set(wx + _r(-0.1, 0.1), trunkH / 2, wz + _r(-0.1, 0.1));
+    scene.add(trunk); _terrainMeshes.push(trunk);
+
+    const coneH = _r(1.8, 3.0);
+    const coneR = _r(0.6, 1.0);
+    const canopy = new THREE.Mesh(
+      new THREE.ConeGeometry(coneR, coneH, 6),
+      _mat(0x1e4a24, 0x142e16, 0.15)
+    );
+    canopy.position.set(trunk.position.x, trunkH + coneH * 0.4, trunk.position.z);
+    canopy.rotation.y = _r(0, Math.PI * 2);
+    scene.add(canopy); _terrainMeshes.push(canopy);
+
+    // Snow cap on top
+    const cap = new THREE.Mesh(
+      new THREE.ConeGeometry(coneR * 0.5, coneH * 0.25, 6),
+      _mat(0xe8eef4, 0xc0d0e0, 0.15)
+    );
+    cap.position.set(canopy.position.x, trunkH + coneH * 0.75, canopy.position.z);
+    scene.add(cap); _terrainMeshes.push(cap);
+    return;
+  }
+
+  // Default: brown disk/stump (tile of trash)
   const r = _r(0.55, 0.85);
   const disk = new THREE.Mesh(
     new THREE.CylinderGeometry(r, r * 1.05, _r(0.25, 0.5), 8),
@@ -216,7 +274,6 @@ function _salvageHeap(wx, wz) {
   scene.add(disk);
   _terrainMeshes.push(disk);
 
-  // Optional second small stump on same tile for variety
   if (_rng() > 0.5) {
     const r2 = _r(0.3, 0.5);
     const disk2 = new THREE.Mesh(
@@ -230,16 +287,33 @@ function _salvageHeap(wx, wz) {
   }
 }
 
-// City ruin block — decorative building fragments in the urban street zone.
-// SLUDGE tiles are PASSABLE — units walk the streets, ruins are visual only.
-// Variety: collapsed walls, window frames, broken facades.
+// City ruin block / ice formations — visual decoration on SLUDGE tiles.
+// SLUDGE is PASSABLE — units walk through; decorations are visual only.
 function _ruinedBlock(wx, wz) {
-  if (_rng() > 0.55) return; // only spawn on ~45% of SLUDGE tiles (streets need open space)
+  if (_rng() > 0.55) return;
+
+  if (_currentTheme === 'snow') {
+    // Ice formations: translucent blue shards jutting from frozen river
+    const count = 1 + Math.floor(_rng() * 2);
+    const iceMat = _mat(0x6098c0, 0x4878a0, 0.3);
+    for (let i = 0; i < count; i++) {
+      const ox = _r(-0.4, 0.4), oz = _r(-0.4, 0.4);
+      const ih = _r(0.4, 1.2);
+      const shard = new THREE.Mesh(
+        new THREE.ConeGeometry(_r(0.15, 0.35), ih, 4),
+        iceMat
+      );
+      shard.position.set(wx + ox, ih / 2, wz + oz);
+      shard.rotation.y = _r(0, Math.PI * 2);
+      shard.rotation.z = _r(-0.15, 0.15);
+      scene.add(shard); _terrainMeshes.push(shard);
+    }
+    return;
+  }
 
   const variant = Math.floor(_rng() * 3);
 
   if (variant === 0) {
-    // Collapsed wall section — low flat slab
     const w = _r(0.8, 1.6), h = _r(0.3, 0.9), d = _r(0.2, 0.5);
     const wall = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
@@ -247,11 +321,9 @@ function _ruinedBlock(wx, wz) {
     );
     wall.position.set(wx + _r(-0.3, 0.3), h / 2, wz + _r(-0.3, 0.3));
     wall.rotation.y = _r(0, Math.PI);
-    scene.add(wall);
-    _terrainMeshes.push(wall);
+    scene.add(wall); _terrainMeshes.push(wall);
 
   } else if (variant === 1) {
-    // Window frame remnant — thin tall rectangular frame
     const fh = _r(1.2, 2.2), fw = _r(0.6, 1.0);
     const frame = new THREE.Mesh(
       new THREE.BoxGeometry(fw, fh, 0.12),
@@ -259,20 +331,16 @@ function _ruinedBlock(wx, wz) {
     );
     frame.position.set(wx + _r(-0.2, 0.2), fh / 2, wz + _r(-0.2, 0.2));
     frame.rotation.y = _r(0, Math.PI);
-    scene.add(frame);
-    _terrainMeshes.push(frame);
+    scene.add(frame); _terrainMeshes.push(frame);
 
-    // Horizontal crossbar
     const bar = new THREE.Mesh(
       new THREE.BoxGeometry(fw * 0.9, 0.1, 0.14),
       _mat(0x1e1c28, 0x050510, 0.06)
     );
     bar.position.set(wx + _r(-0.2, 0.2), fh * 0.55, wz + _r(-0.2, 0.2));
-    scene.add(bar);
-    _terrainMeshes.push(bar);
+    scene.add(bar); _terrainMeshes.push(bar);
 
   } else {
-    // Rubble pile — squat jumble of concrete chunks
     const count = 2 + Math.floor(_rng() * 2);
     for (let i = 0; i < count; i++) {
       const ox = _r(-0.5, 0.5), oz = _r(-0.5, 0.5);
@@ -283,8 +351,7 @@ function _ruinedBlock(wx, wz) {
       );
       chunk.position.set(wx + ox, s * 0.2, wz + oz);
       chunk.rotation.set(_r(-0.3, 0.3), _r(0, Math.PI), _r(-0.2, 0.2));
-      scene.add(chunk);
-      _terrainMeshes.push(chunk);
+      scene.add(chunk); _terrainMeshes.push(chunk);
     }
   }
 }
@@ -299,6 +366,11 @@ export function initTerrain(mapDef, groundMesh) {
     m.geometry.dispose();
   }
   _terrainMeshes.length = 0;
+
+  // Select colour theme based on map
+  const theme = mapDef.id === 'frozen-siege' ? 'snow' : 'default';
+  setTerrainTheme(theme);
+  setSceneTheme(theme);
 
   const tiles = mapDef.getTiles();
   _tiles = tiles;
@@ -349,8 +421,8 @@ export function getTileType(tx, tz) {
 let _groundTexCanvas = null;   // retained so we can patch individual tiles
 let _groundMeshRef   = null;
 
-const SALVAGE_PER_TILE = 30;   // total per tile — only 2 trips then pile is gone
-const SALVAGE_PER_TRIP = 15;   // one worker trip; 2 trips per pile
+const SALVAGE_PER_TILE = 150;  // total per tile — 5 trips then pile is gone
+const SALVAGE_PER_TRIP = 30;   // one worker trip; each delivery is a real haul
 
 // Lazy-init: populated on first access so we don't scan tiles at load time
 const _trashAmounts = new Map(); // key = tz*MAP_W+tx → remaining salvage
@@ -418,11 +490,18 @@ function _depleteTile(tx, tz) {
   }
 }
 
-/** Find nearest TRASH tile with salvage remaining, within radiusTiles */
-export function nearestTrashWithSalvage(wx, wz, radiusTiles = 30) {
+/**
+ * Find nearest TRASH tile with salvage remaining.
+ * @param {number} wx - world X origin
+ * @param {number} wz - world Z origin
+ * @param {number} radiusTiles - search radius in tiles (default 80)
+ * @param {Set<number>} [skipKeys] - optional set of tile keys (tz*mapW+tx) to skip (claimed tiles)
+ */
+export function nearestTrashWithSalvage(wx, wz, radiusTiles = 80, skipKeys = null) {
   if (!_tiles) return null;
   const tx0 = Math.floor(wx / TILE), tz0 = Math.floor(wz / TILE);
   let best = null, bestD = Infinity;
+  let bestFallback = null, bestFallbackD = Infinity; // fallback if all tiles are claimed
   for (let dz = -radiusTiles; dz <= radiusTiles; dz++) {
     for (let dx = -radiusTiles; dx <= radiusTiles; dx++) {
       const tx = tx0 + dx, tz = tz0 + dz;
@@ -430,11 +509,19 @@ export function nearestTrashWithSalvage(wx, wz, radiusTiles = 30) {
       if (getTileType(tx, tz) !== T.TRASH) continue;
       if (getTrashAmount(tx, tz) <= 0) continue;
       const d = Math.hypot(dx, dz);
-      if (d < bestD) { bestD = d; best = { tx, tz, wx: tx * TILE + TILE / 2, wz: tz * TILE + TILE / 2 }; }
+      const key = tz * _mapW + tx;
+      if (skipKeys?.has(key)) {
+        if (d < bestFallbackD) { bestFallbackD = d; bestFallback = { tx, tz, wx: tx * TILE + TILE / 2, wz: tz * TILE + TILE / 2 }; }
+      } else {
+        if (d < bestD) { bestD = d; best = { tx, tz, wx: tx * TILE + TILE / 2, wz: tz * TILE + TILE / 2 }; }
+      }
     }
   }
-  return best;
+  return best ?? bestFallback; // prefer unclaimed; fall back to claimed if needed
 }
+
+/** Returns the tile key used for claiming: tz * mapW + tx */
+export function trashTileKey(tx, tz) { return tz * _mapW + tx; }
 
 // Legacy: still used if workers clear TRASH for path-making (now gives Scrap)
 export function clearTrashTile(tx, tz) {
@@ -461,8 +548,13 @@ function _repaintTile(cv, tx, tz, newType) {
       const n  = h(px, py), n2 = h(px + 9319, py + 5471), n3 = h(px * 2 + 1, py * 2 + 3);
       let r = br + (n - 0.5) * 16, g = bg + (n - 0.5) * 14, b = bb + (n2 - 0.5) * 12;
       if (newType === T.CRACKED) {
-        if (dx === 0 || dy === 0) { r *= 0.55; g *= 0.55; b *= 0.55; }
-        if (n3 > 0.82) { r += 18; g += 15; b += 10; }
+        if (_currentTheme === 'snow') {
+          if (n3 > 0.80) { r += 20; g += 22; b += 24; }
+          if (n2 > 0.88) { r -= 8;  g -= 6;  b -= 4; }
+        } else {
+          if (dx === 0 || dy === 0) { r *= 0.55; g *= 0.55; b *= 0.55; }
+          if (n3 > 0.82) { r += 18; g += 15; b += 10; }
+        }
       }
       const i = (dy * SCALE + dx) * 4;
       d[i]   = Math.max(0, Math.min(255, r | 0));

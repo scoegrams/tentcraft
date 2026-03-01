@@ -7,27 +7,32 @@ import { FAC, WORLD_W, WORLD_H } from './constants.js';
 import { config } from './config.js';
 import { G } from './state.js';
 import { renderer, camera, scene, resizeRenderer, updateParticles,
-         updateProjectiles, tickHealthBars, tickTombstones, clearTombstones, getGroundMesh } from './renderer.js';
+         updateProjectiles, tickHealthBars, tickTombstones, clearTombstones, getGroundMesh,
+         updateAttackMarkers, updateTargetRing, updateMoveWaypoints, updateHitFlashes,
+         tickRallyFlags, clearAllRallyFlags, updateRallyConfirms,
+         updateDamageFlashes, updateDmgNumbers } from './renderer.js';
 import { initTerrain } from './terrain.js';
 import { initNavMesh } from './navmesh.js';
 import { MAP_GREAT_DIVIDE } from '../maps/great-divide.js';
 import { ALL_MAPS } from '../maps/index.js';
 import { getMapResources } from '../maps/utils.js';
 import { nearestTrashWithSalvage } from './terrain.js';
-import { spawnUnit }      from './units.js';
+import { spawnUnit, assignExtractTarget } from './units.js';
 import { spawnBuilding }  from './buildings.js';
 import { spawnResource }  from './resources.js';
 import { updateUnit }     from './units.js';
 import { updateBuilding } from './buildings.js';
 import { updateAI }       from './ai.js';
-import { updateHUD, updatePanel, drawMinimap, setStatusBar } from './ui.js';
+import { updateHUD, updatePanel, drawMinimap, setStatusBar, cycleIdleWorker } from './ui.js';
 import { updateCamera }   from './input.js';
+import { preloadAudio, setSfxVolume } from './sfx.js';
 
 // ── Map init ─────────────────────────────────────────────
 // Uses config.mapDef (set by lobby) or MAP_GREAT_DIVIDE. Supports 1–4 players:
 // starts[0] = player, starts[1..] = AI. Each base gets HQ, housing, workers; resources from map preset.
 function initMap() {
   clearTombstones();
+  clearAllRallyFlags();
   const mapDef = config.mapDef || MAP_GREAT_DIVIDE;
   const pFac   = config.playerFac;
   const aFac   = config.aiFac;
@@ -54,13 +59,15 @@ function initMap() {
 
     spawnBuilding('hq', fac, HQX, HQZ, true);
 
-    const off = fac === FAC.GILD ? 10 : -10;
-    spawnBuilding('housing', fac, HQX - 10, HQZ - 10, true);
-    spawnBuilding('housing', fac, HQX - 10, HQZ,      true);
-    spawnBuilding('housing', fac, HQX - 10, HQZ + 10, true);
-    spawnBuilding('housing', fac, HQX,       HQZ - 14, true);
-    spawnBuilding('housing', fac, HQX,       HQZ + 14, true);
-    spawnBuilding('housing', fac, HQX + off, HQZ - 14, true);
+    // Place starting housing BEHIND the HQ (away from enemy / map centre)
+    // so the front lane stays clear for units to march out.
+    const behind = fac === FAC.GILD ? 1 : -1;  // +1 = further east, -1 = further west
+    spawnBuilding('housing', fac, HQX + behind * 12, HQZ - 10, true);
+    spawnBuilding('housing', fac, HQX + behind * 12, HQZ,      true);
+    spawnBuilding('housing', fac, HQX + behind * 12, HQZ + 10, true);
+    spawnBuilding('housing', fac, HQX,               HQZ - 16, true);
+    spawnBuilding('housing', fac, HQX,               HQZ + 16, true);
+    spawnBuilding('housing', fac, HQX + behind * 12, HQZ - 20, true);
 
     const workerCount = isAI ? 2 : 3;
     const dx = fac === FAC.GILD ? -10 : 10;
@@ -76,8 +83,7 @@ function initMap() {
     for (const w of workers) {
       if (!w) continue;
       if (nearestTrash) {
-        w.extractTarget = nearestTrash;
-        w.state = 'extracting';
+        assignExtractTarget(w, nearestTrash); // uses claiming so workers spread across piles
       } else if (nearestRes) {
         w.gatherTarget = nearestRes;
         w.state = 'gathering';
@@ -120,6 +126,14 @@ function loop(timestamp) {
     updateAI(dt);
     updateParticles(dt);
     updateProjectiles(dt);
+    updateHitFlashes(dt);
+    updateRallyConfirms(dt);
+    updateDamageFlashes(dt);
+    updateDmgNumbers(dt);
+    tickRallyFlags();
+    updateAttackMarkers(dt);
+    updateMoveWaypoints(dt);
+    updateTargetRing();
     tickHealthBars(G.entities);
     tickTombstones();
 
@@ -153,14 +167,17 @@ export function startGame(chosenFac, mapIndex = 0) {
   config.aiFac     = chosenFac === FAC.GILD ? FAC.SCAV : FAC.GILD;
   config.mapDef    = (ALL_MAPS[mapIndex] != null) ? ALL_MAPS[mapIndex] : MAP_GREAT_DIVIDE;
   document.getElementById('lobby').style.display = 'none';
+  preloadAudio();
   resizeRenderer();
   initMap();
   requestAnimationFrame(loop);
 }
 
 // Expose globally so lobby HTML can call it without module imports
-window._startGame = startGame;
-window._FAC       = FAC;
+window._startGame        = startGame;
+window._FAC              = FAC;
+window._setSfxVolume     = setSfxVolume;
+window._cycleIdleWorker  = cycleIdleWorker;
 
 // Kick off the renderer (no game yet — lobby shows first)
 resizeRenderer();

@@ -390,3 +390,89 @@ export function generateBreadline(w, h, seed = 4242) {
 
   return cellularSmooth(tiles, w, h, 1);
 }
+
+// ── FROZEN SIEGE (snow WC2 homage) ──────────────────────
+// Winter tileset feel: wide snowy ground (CRACKED = snow), frozen rivers
+// (SLUDGE = ice), dense trash forests on flanks. Two bases face each other
+// across a frozen river with a narrow bridge crossing.
+export function generateFrozenSiege(w, h, seed = 6060) {
+  const rng  = mulberry32(seed);
+  const rng2 = mulberry32(seed + 555);
+  const rng3 = mulberry32(seed + 1111);
+  // Default to snowy ground (CRACKED) instead of dark concrete
+  const tiles = new Uint8Array(w * h).fill(T.CRACKED);
+
+  const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+
+  // ── Frozen river running horizontally through the middle ──
+  const riverGrid = _makeNoiseGrid(w, h, 0.06, rng);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ny = y / h;
+      const riverDist = Math.abs(ny - 0.5);
+      const n = _sampleNoise(riverGrid, x, y);
+      // River band ~10% of map height with wavy edges
+      if (riverDist < 0.06 + n * 0.03) tiles[y * w + x] = T.SLUDGE;
+    }
+  }
+
+  // ── Bridge crossing (narrow passable strip through the river) ──
+  const bridgeW = 6;
+  _fillRect(tiles, w, cx - bridgeW, Math.floor(h * 0.42), cx + bridgeW, Math.floor(h * 0.58), T.CRACKED);
+  // Second smaller bridge on the right
+  const bx2 = Math.floor(w * 0.75);
+  _fillRect(tiles, w, bx2 - 3, Math.floor(h * 0.44), bx2 + 3, Math.floor(h * 0.56), T.CRACKED);
+
+  // ── Dense trash forests on left and right flanks (pine forests) ──
+  const tGrid = _makeNoiseGrid(w, h, 0.11, rng2);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (tiles[y * w + x] !== T.CRACKED) continue;
+      const nx = x / w;
+      const flanks = Math.max(0, 1 - nx / 0.22) + Math.max(0, (nx - 0.78) / 0.22);
+      if (flanks <= 0) continue;
+      const n = _sampleNoise(tGrid, x, y);
+      if (n < 0.48 - flanks * 0.12) tiles[y * w + x] = T.TRASH;
+    }
+  }
+
+  // ── Scattered rubble (frozen ruins) in the mid-field ──
+  const rGrid = _makeNoiseGrid(w, h, 0.14, rng3);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (tiles[y * w + x] !== T.CRACKED) continue;
+      const ny = y / h;
+      const inMid = ny > 0.3 && ny < 0.7;
+      if (!inMid) continue;
+      const n = _sampleNoise(rGrid, x, y);
+      if (n < 0.22) tiles[y * w + x] = T.RUBBLE;
+    }
+  }
+
+  // ── Concrete roads (dark paths through the snow) ──
+  // Vertical road from each base to the bridge
+  _fillRect(tiles, w, cx - 2, 0, cx + 2, h, T.CONCRETE);
+  // Horizontal patrol road
+  _fillRect(tiles, w, Math.floor(w * 0.2), cy - 1, Math.floor(w * 0.8), cy + 1, T.CONCRETE);
+
+  // ── Cellular smoothing ──
+  const smoothed = cellularSmooth(tiles, w, h, 2);
+
+  // ── Clear base zones ──
+  // SCAV base (top) — tile ~(cx, 14)
+  _clearCircle(smoothed, w, cx, 14, 16, T.CRACKED);
+  // GILD base (bottom) — tile ~(cx, h-14)
+  _clearCircle(smoothed, w, cx, h - 14, 16, T.CRACKED);
+  // Re-punch the bridge after smoothing
+  _fillRect(smoothed, w, cx - bridgeW, Math.floor(h * 0.43), cx + bridgeW, Math.floor(h * 0.57), T.CRACKED);
+  _fillRect(smoothed, w, bx2 - 3, Math.floor(h * 0.44), bx2 + 3, Math.floor(h * 0.56), T.CRACKED);
+
+  // ── Border wall ──
+  const border = 3;
+  _fillRect(smoothed, w, 0, 0, w, border, T.TRASH);
+  _fillRect(smoothed, w, 0, h - border, w, h, T.TRASH);
+  _fillRect(smoothed, w, 0, 0, border, h, T.TRASH);
+  _fillRect(smoothed, w, w - border, 0, w, h, T.TRASH);
+
+  return smoothed;
+}

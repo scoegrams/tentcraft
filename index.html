@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Tent City Craft — Scrap or Die</title>
   <link rel="stylesheet" href="css/hud.css">
 </head>
@@ -38,6 +41,15 @@
       <span class="res-label">Wave</span>
       <span class="res-val" id="r-wave">1</span>
     </div>
+    <button id="idle-worker-btn" title="Jump to idle worker (I)" onclick="window._cycleIdleWorker && window._cycleIdleWorker()" style="display:none">
+      <span id="idle-worker-icon">⛏</span> <span id="idle-worker-count">0</span> IDLE
+    </button>
+    <div id="sfx-vol-wrap" title="SFX Volume">
+      <span class="res-icon" style="font-size:11px;opacity:.7">🔊</span>
+      <input id="sfx-vol-slider" type="range" min="0" max="100" value="70"
+             oninput="gameSfxVol(this.value)"
+             style="width:64px;accent-color:var(--accent);cursor:pointer;vertical-align:middle">
+    </div>
     <div id="zoom-controls">
       <button class="zoom-btn" onclick="gameZoom(1)" title="Zoom In (+)">+</button>
       <button class="zoom-btn" onclick="gameZoom(-1)" title="Zoom Out (-)">−</button>
@@ -68,6 +80,8 @@
         <div class="hk-row"><kbd>Scroll</kbd><span>Zoom in / out</span></div>
         <div class="hk-row"><kbd>+ / −</kbd><span>Zoom in / out</span></div>
         <div class="hk-row"><kbd>Mid drag</kbd><span>Free pan</span></div>
+        <div class="hk-row"><kbd>H</kbd><span>Select &amp; jump to your HQ</span></div>
+        <div class="hk-row"><kbd>Home</kbd><span>Select &amp; jump to your HQ</span></div>
         <div class="hk-row"><kbd>F2</kbd><span>Jump to your base</span></div>
         <div class="hk-row"><kbd>F3</kbd><span>Jump to enemy base</span></div>
         <div class="hk-row"><kbd>F4</kbd><span>Jump to map center</span></div>
@@ -93,7 +107,7 @@
       <div class="hkl-section">WORKER — BUILD (Scavengers)</div>
       <div class="hkl-grid">
         <div class="hk-row"><kbd>T</kbd><span>Tent City (Housing +4 pop)</span></div>
-        <div class="hk-row"><kbd>M</kbd><span>Mess Hall (Barracks)</span></div>
+        <div class="hk-row"><kbd>B</kbd><span>Mess Hall (Barracks)</span></div>
         <div class="hk-row"><kbd>C</kbd><span>Chop Shop (Upgrade)</span></div>
         <div class="hk-row"><kbd>L</kbd><span>Computer Lab (Magic)</span></div>
         <div class="hk-row"><kbd>J</kbd><span>Junk Turret (Tower)</span></div>
@@ -103,7 +117,7 @@
       <div class="hkl-section">WORKER — BUILD (Gilded)</div>
       <div class="hkl-grid">
         <div class="hk-row"><kbd>T</kbd><span>Studio Apts (Housing +4 pop)</span></div>
-        <div class="hk-row"><kbd>M</kbd><span>Security HQ (Barracks)</span></div>
+        <div class="hk-row"><kbd>B</kbd><span>Security HQ (Barracks)</span></div>
         <div class="hk-row"><kbd>C</kbd><span>Design Studio (Upgrade)</span></div>
         <div class="hk-row"><kbd>L</kbd><span>PR Firm (Magic)</span></div>
         <div class="hk-row"><kbd>J</kbd><span>Microwave Emitter (Tower)</span></div>
@@ -114,7 +128,7 @@
         <div class="hk-row"><kbd>W</kbd><span>Train Worker / Assistant</span></div>
         <div class="hk-row"><kbd>I</kbd><span>Train Infantry (Hooded / Enforcer)</span></div>
         <div class="hk-row"><kbd>R</kbd><span>Train Ranged (Slinger / Guard)</span></div>
-        <div class="hk-row"><kbd>H</kbd><span>Train Heavy (Brute / Bodyguard)</span></div>
+        <div class="hk-row"><kbd>V</kbd><span>Train Heavy (Brute / Bodyguard)</span></div>
         <div class="hk-row"><kbd>F</kbd><span>Train Siege (Fire-Eater / Drone)</span></div>
         <div class="hk-row"><kbd>C</kbd><span>Train Caster (Hacker / Consultant)</span></div>
         <div class="hk-row"><kbd>Esc</kbd><span>Cancel current production</span></div>
@@ -299,16 +313,41 @@
   </div><!-- #lobby -->
 
   <!-- Three.js importmap + entry point -->
+  <!-- Bump V when JS files change to force browser cache invalidation -->
   <script type="importmap">
-    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js"}}
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js",
+      "./js/main.js":        "./js/main.js?v=19",
+      "./js/sfx.js":         "./js/sfx.js?v=19",
+      "./js/units.js":       "./js/units.js?v=19",
+      "./js/buildings.js":   "./js/buildings.js?v=19",
+      "./js/renderer.js":    "./js/renderer.js?v=19",
+      "./js/input.js":       "./js/input.js?v=19",
+      "./js/ui.js":          "./js/ui.js?v=19",
+      "./js/ai.js":          "./js/ai.js?v=19",
+      "./js/constants.js":   "./js/constants.js?v=19",
+      "./js/state.js":       "./js/state.js?v=19",
+      "./js/entities.js":    "./js/entities.js?v=19",
+      "./js/world.js":       "./js/world.js?v=19",
+      "./js/terrain.js":     "./js/terrain.js?v=19",
+      "./js/navmesh.js":     "./js/navmesh.js?v=19",
+      "./js/pathfinding.js": "./js/pathfinding.js?v=19",
+      "./js/config.js":      "./js/config.js?v=19",
+      "./js/resources.js":   "./js/resources.js?v=19"
+    }
+  }
   </script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=19"></script>
 
-  <!-- Zoom control (called from HUD buttons + keyboard in input.js) -->
+  <!-- Zoom + SFX volume controls (called from HUD buttons) -->
   <script>
     function gameZoom(dir) {
       // dir: +1 = zoom in (frustum smaller), -1 = zoom out (frustum larger)
       if (window._gameZoom) window._gameZoom(dir);
+    }
+    function gameSfxVol(val) {
+      if (window._setSfxVolume) window._setSfxVolume(val / 100);
     }
   </script>
 
@@ -324,6 +363,7 @@
       { name: 'THE BREADLINE',     stats: '1v1 · ECONOMIC',       available: false },  // 2
       { name: 'KABOOM BNE',        stats: '2–4P · SYMMETRICAL',   available: true  },  // 3
       { name: 'THE OVERFLOW',      stats: '1v1 · RESOURCE RICH',  available: true  },  // 4
+      { name: 'FROZEN SIEGE',      stats: '1v1 · WINTER · BRIDGE', available: true  },  // 5
     ];
 
     function lobbyChoose(fac) {
@@ -359,6 +399,7 @@
 
       if (_lobbyMap === 3) { _drawKaboom(ctx, W, H); return; }
       if (_lobbyMap === 4) { _drawOverflow(ctx, W, H); return; }
+      if (_lobbyMap === 5) { _drawFrozenSiege(ctx, W, H); return; }
       if (!MAPS[_lobbyMap].available) {
         ctx.fillStyle = '#08060a';
         ctx.fillRect(0, 0, W, H);
@@ -601,6 +642,105 @@
       ctx.fillStyle = '#556'; ctx.fillText('▒ TRASH = Salvage', W/2 - 30, H-14);
 
       ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+      ctx.strokeRect(1, 1, W-2, H-2);
+    }
+
+    function _drawFrozenSiege(ctx, W, H) {
+      const pFac = _lobbyFac || 'scav';
+
+      // Snow ground — grey-blue like WC2 winter
+      ctx.fillStyle = '#b4c0cc'; ctx.fillRect(0, 0, W, H);
+
+      // Slight terrain variation
+      ctx.fillStyle = '#a4b4c0';
+      const patches = [
+        [.20,.22,40,28],[.60,.18,50,24],[.82,.30,34,26],
+        [.18,.78,44,26],[.58,.82,52,24],[.84,.72,36,24],
+      ];
+      for (const [px,py,rw,rh] of patches) {
+        ctx.beginPath(); ctx.ellipse(px*W, py*H, rw, rh, 0, 0, Math.PI*2); ctx.fill();
+      }
+
+      // Frozen river — deep blue like WC2 water
+      ctx.fillStyle = '#5080b0';
+      ctx.fillRect(0, H*.44, W, H*.12);
+      // Ice sheen
+      ctx.fillStyle = 'rgba(100,160,210,0.25)';
+      ctx.fillRect(0, H*.46, W, H*.04);
+
+      // Bridge crossing (center)
+      ctx.fillStyle = '#9a8870';
+      ctx.fillRect(W*.46, H*.42, W*.08, H*.16);
+      // Second bridge (right)
+      ctx.fillStyle = '#8a7860';
+      ctx.fillRect(W*.72, H*.43, W*.05, H*.14);
+
+      // Pine forests — dark muted green like WC2 trees
+      ctx.fillStyle = '#264a28';
+      const trees = [
+        [.06,.20,26,30],[.06,.50,24,34],[.06,.80,26,28],
+        [.14,.14,28,22],[.14,.40,24,28],[.14,.64,26,26],[.14,.88,24,20],
+        [.94,.20,26,30],[.94,.50,24,34],[.94,.80,26,28],
+        [.86,.14,28,22],[.86,.40,24,28],[.86,.64,26,26],[.86,.88,24,20],
+      ];
+      for (const [tx,ty,rw,rh] of trees) {
+        ctx.beginPath(); ctx.ellipse(tx*W, ty*H, rw, rh, 0, 0, Math.PI*2); ctx.fill();
+      }
+
+      // Rubble (frozen ruins in mid-field)
+      ctx.fillStyle = '#707878';
+      const ruins = [[.36,.34,12,8],[.64,.34,10,8],[.36,.66,12,8],[.64,.66,10,8],[.50,.30,8,6],[.50,.70,8,6]];
+      for (const [rx,ry,rw,rh] of ruins) {
+        ctx.fillRect(rx*W-rw/2, ry*H-rh/2, rw, rh);
+      }
+
+      // Dark road (vertical through center)
+      ctx.fillStyle = '#606068';
+      ctx.fillRect(W*.48, 0, W*.04, H);
+
+      // Resource nodes
+      ctx.fillStyle = '#c8a020';
+      const dumps = [[.35,.20],[.50,.18],[.65,.20],[.35,.80],[.50,.82],[.65,.80],[.50,.50]];
+      for (const [x,y] of dumps) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+        ctx.strokeStyle = 'rgba(200,160,32,.4)'; ctx.lineWidth = 1;
+        ctx.strokeRect(x*W-6, y*H-6, 12, 12);
+      }
+      ctx.fillStyle = '#e05020';
+      const cafes = [[.42,.20],[.58,.20],[.42,.80],[.58,.80],[.38,.50],[.62,.50]];
+      for (const [x,y] of cafes) {
+        ctx.fillRect(x*W-4, y*H-4, 8, 8);
+      }
+
+      // Player starts
+      const scavCol = pFac === 'scav' ? '#ff5010' : '#b03008';
+      const gildCol = pFac === 'gild' ? '#40a8ff' : '#1050a0';
+
+      ctx.fillStyle = scavCol;
+      ctx.fillRect(W*.50-7, H*.10-7, 14, 14);
+      ctx.strokeStyle = scavCol; ctx.lineWidth = 2;
+      ctx.strokeRect(W*.50-10, H*.10-10, 20, 20);
+
+      ctx.fillStyle = gildCol;
+      ctx.fillRect(W*.50-7, H*.90-7, 14, 14);
+      ctx.strokeStyle = gildCol;
+      ctx.strokeRect(W*.50-10, H*.90-10, 20, 20);
+
+      ctx.font = 'bold 11px Rajdhani, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = scavCol;
+      ctx.fillText(pFac === 'scav' ? '▼ YOU' : '▼ SCAV', W*.50, H*.10-14);
+      ctx.fillStyle = gildCol;
+      ctx.fillText(pFac === 'gild' ? '▲ YOU' : '▲ GILD', W*.50, H*.90+22);
+
+      // Legend
+      ctx.textAlign = 'left'; ctx.font = '10px Rajdhani, sans-serif';
+      ctx.fillStyle = '#264a28'; ctx.fillText('■ Pine Forest (TRASH)', 8, H-28);
+      ctx.fillStyle = '#5080b0'; ctx.fillText('■ Frozen River', 8, H-14);
+      ctx.fillStyle = '#c8a020'; ctx.fillText('■ Dumps', W/2+10, H-28);
+      ctx.fillStyle = '#e05020'; ctx.fillText('■ Cafes', W/2+10, H-14);
+
+      ctx.strokeStyle = '#8899aa'; ctx.lineWidth = 1;
       ctx.strokeRect(1, 1, W-2, H-2);
     }
 

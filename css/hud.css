@@ -110,6 +110,50 @@ html, body {
   letter-spacing: .18em; font-weight: 600; opacity: .9;
 }
 
+/* ── Idle Worker Button ── */
+@keyframes idle-pulse {
+  0%, 100% { background: #1a1200; box-shadow: 0 0 0 0 rgba(251,191,36,.0); }
+  50%       { background: #3d2800; box-shadow: 0 0 8px 2px rgba(251,191,36,.5); }
+}
+#idle-worker-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 10px; height: 100%;
+  background: #1a1200;
+  border: none; border-left: 1px solid #1e1e1e; border-right: 1px solid #1e1e1e;
+  color: #fbbf24;
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  cursor: pointer; pointer-events: auto;
+  transition: background .15s;
+}
+#idle-worker-btn:hover { background: #2d1e00; }
+#idle-worker-btn.has-idle {
+  animation: idle-pulse 1.2s ease-in-out infinite;
+  color: #fef08a;
+}
+#idle-worker-btn #idle-worker-count {
+  font-size: 14px; font-weight: 900;
+}
+
+#sfx-vol-wrap {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 10px; border-left: 1px solid #1e1e1e;
+  pointer-events: auto;
+}
+#sfx-vol-slider {
+  -webkit-appearance: none;
+  height: 3px; border-radius: 2px;
+  background: #333;
+  outline: none;
+}
+#sfx-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
 #zoom-controls {
   display: flex; align-items: center; gap: 2px;
   padding: 0 8px; border-left: 1px solid #1e1e1e;
@@ -400,25 +444,59 @@ html, body {
 .hotkey    { font-family: 'Share Tech Mono', monospace; position: absolute; top: 2px; left: 3px; font-size: 8px; color: #888; opacity: .8; font-weight: bold; }
 
 .cmd-cancel .cmd-icon { filter: drop-shadow(0 0 5px rgba(239,68,68,.7)); }
+.cmd-rally-set { border-color: #c04020; }
+.cmd-rally-set .cmd-icon { filter: drop-shadow(0 0 5px rgba(255,80,30,.8)); }
 .cmd-btn.gilded-style { border-color: #1a2838; }
 .cmd-btn.gilded-style:hover:not(.cmd-empty) {
   border-color: #2a4060;
   box-shadow: 0 0 8px rgba(51,153,187,.2);
 }
 
-/* ── BUILD GHOST NOTIF ── */
+/* ── BUILD GHOST NOTIF — anchored above command card, right side ── */
 #build-notif {
-  position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+  position: fixed;
+  bottom: calc(var(--hud-h) + var(--status-h) + 6px);
+  right: 0;
+  width: 246px;
   z-index: 30; pointer-events: none; display: none;
-  background: #111;
-  border: 1px solid var(--accent);
-  color: var(--accent); padding: 6px 22px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 11px;
-  letter-spacing: .15em; text-transform: uppercase;
-  box-shadow: 0 0 16px rgba(224,48,16,.2);
+
+  background: #0d0d0d;
+  border: 2px solid var(--accent);
+  border-right: none;
+  border-bottom: 2px solid var(--accent);
+  padding: 10px 16px 9px;
+
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #eee;
+  line-height: 1.3;
+
+  box-shadow: -4px 0 24px rgba(224,48,16,.25), inset 0 0 12px rgba(0,0,0,.6);
 }
-#build-notif span { color: #ddd; }
+/* Building name — accent colour */
+#build-notif .bn-name {
+  display: block;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  margin-bottom: 2px;
+}
+/* Cost line — dimmer */
+#build-notif .bn-cost {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #aaa;
+  letter-spacing: .08em;
+}
+#build-notif .bn-cost .scrap-c  { color: #e8a030; }
+#build-notif .bn-cost .salv-c   { color: #a0c040; }
+/* "BUILD" verb label */
+#build-notif span { color: #555; font-size: 11px; letter-spacing: .2em; font-weight: 400; }
 
 /* ── SELECTION BOX ── */
 #selbox {

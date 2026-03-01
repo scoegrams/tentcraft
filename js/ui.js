@@ -5,7 +5,7 @@
 
 import {
   FAC, BLDG_DEFS, UNIT_DEFS, PORTRAITS, getUnitCost,
-  CMD_BY_UNIT, CMD_WORKER, CMD_WORKER_GILD,
+  CMD_BY_UNIT, CMD_WORKER, CMD_WORKER_GILD, CMD_TRANSPORT,
   UNIT_DESCS, UNIT_DESCS_GILD, WORLD_W, WORLD_H,
 } from './constants.js';
 import { config } from './config.js';
@@ -13,7 +13,7 @@ import { G, canAfford, spend } from './state.js';
 import { addSelRing, removeSelRing, camera, canvas } from './renderer.js';
 import { findHQ } from './world.js';
 import { spawnBuilding } from './buildings.js';
-import { spawnUnit }     from './units.js';
+import { spawnUnit, unloadTransport } from './units.js';
 import { findNearest }   from './world.js';
 
 // ── DOM refs ─────────────────────────────────────────────
@@ -24,6 +24,10 @@ const elScrap  = $('r-scrap');
 const elSalv   = $('r-salv');
 const elPop    = $('r-pop');
 const elWave   = $('r-wave');
+
+const elIdleBtn   = $('idle-worker-btn');
+const elIdleCount = $('idle-worker-count');
+let _idleWorkerIdx = 0;  // cycles through idle workers on each click
 
 const elStatusText  = $('statusbar-text');
 const elBuildNotif  = $('build-notif');
@@ -70,13 +74,57 @@ export function updateHUD() {
   elSalv.textContent  = Math.floor(G.player.salvage);
   elPop.textContent   = `${G.player.pop} / ${G.player.popCap}`;
   elWave.textContent  = G.ai.waveSize;
+
+  // Idle worker indicator
+  const idleCount = G.entities.filter(
+    e => e.alive && e.isUnit && e.subtype === 'worker' &&
+         e.faction === config.playerFac && e.state === 'idle'
+  ).length;
+  if (elIdleBtn) {
+    elIdleBtn.style.display = idleCount > 0 ? '' : 'none';
+    elIdleCount.textContent = idleCount;
+    elIdleBtn.classList.toggle('has-idle', idleCount > 0);
+  }
+}
+
+// ── Cycle to the next idle worker ────────────────────────
+export function cycleIdleWorker() {
+  const idleWorkers = G.entities.filter(
+    e => e.alive && e.isUnit && e.subtype === 'worker' &&
+         e.faction === config.playerFac && e.state === 'idle'
+  );
+  if (idleWorkers.length === 0) return;
+
+  _idleWorkerIdx = _idleWorkerIdx % idleWorkers.length;
+  const w = idleWorkers[_idleWorkerIdx];
+  _idleWorkerIdx++;
+
+  // Select it, clearing previous selection
+  G.selection.forEach(e => { e.selected = false; removeSelRing(e); });
+  G.selection = [w];
+  w.selected = true;
+  addSelRing(w);
+
+  // Jump camera to the worker
+  camera.position.x = w.x;
+  camera.position.z = w.z + (camera.top - camera.bottom) * 0.35;
+
+  updatePanel();
+  setStatusBar(`Idle worker ${_idleWorkerIdx} of ${idleWorkers.length} — assign them a task!`, true);
 }
 
 // ── Build mode notification ───────────────────────────────
 export function showBuildNotif(bType) {
   const def = BLDG_DEFS[bType];
+  const [s, v] = def.cost ?? [0, 0];
+  const costParts = [];
+  if (s) costParts.push(`<span class="scrap-c">♻ ${s}</span>`);
+  if (v) costParts.push(`<span class="salv-c">⚙ ${v}</span>`);
+  const costStr = costParts.length ? costParts.join(' &nbsp; ') : 'FREE';
   elBuildNotif.innerHTML =
-    `⚒ PLACE <span>${def.label[0].toUpperCase()}</span> &nbsp;|&nbsp; <span style="color:#ffd070">[ESC]</span> Cancel`;
+    `<span class="bn-name">⚒ ${def.label[0].toUpperCase()}</span>` +
+    `<span class="bn-cost">PLACE TO BUILD &nbsp;·&nbsp; ${costStr}</span>` +
+    `<span style="display:block;margin-top:5px;font-size:11px;color:#555;letter-spacing:.18em">[ ESC ] CANCEL</span>`;
   elBuildNotif.style.display = 'block';
 }
 export function hideBuildNotif() {
@@ -187,6 +235,8 @@ function _actionDesc(action, cost) {
     'attack-move':  'Attack-move — right-click enemy to attack',
     'move':         'Move — right-click to move',
     'cancel-prod':  'Cancel current production',
+    'set-rally':    'Set Rally — then right-click the map',
+    'unload':       'Unload all passengers at current position',
   }[action] || action;
 }
 
@@ -227,6 +277,22 @@ function _handleCmd(def, ent) {
     updatePanel();
     return;
   }
+
+  if (action === 'set-rally') {
+    setStatusBar('Right-click on the map to set the rally point for this building.', true);
+    return;
+  }
+
+  if (action === 'unload') {
+    for (const e of G.selection) {
+      if (e.alive && e.isUnit && e.subtype === 'transport') {
+        unloadTransport(e);
+        setStatusBar(`Sprinter unloaded — units dropped at current position.`, true);
+      }
+    }
+    updatePanel();
+    return;
+  }
 }
 
 // ── Building command card (production) ───────────────────
@@ -235,7 +301,7 @@ function _buildingCmds(ent) {
   if (!def?.produces?.length) return Array(9).fill(null);
 
   const ICONS = { worker:'🧱', infantry:'⚔️', ranged:'🏹', heavy:'🔨', siege:'🔥', caster:'☠️' };
-  const KEYS  = { worker:'W', infantry:'I', ranged:'R', heavy:'H', siege:'F', caster:'C' };
+  const KEYS  = { worker:'W', infantry:'I', ranged:'R', heavy:'V', siege:'F', caster:'C' };
 
   const cmds = Array(9).fill(null);
   def.produces.forEach((ut, i) => {
@@ -246,6 +312,16 @@ function _buildingCmds(ent) {
       action: `train:${ut}`,
     };
   });
+
+  // Rally point button — slot 6, key G
+  const hasRally = ent.rallyX !== null;
+  cmds[6] = {
+    icon: '🚩',
+    label: hasRally ? 'Move Rally' : 'Set Rally',
+    key: 'G',
+    action: 'set-rally',
+    cls: hasRally ? 'cmd-rally-set' : '',
+  };
 
   if (ent.prodQueue.length > 0) {
     cmds[8] = { icon:'⛔', label:'Cancel', key:'ESC', action:'cancel-prod', cls:'cmd-cancel' };
@@ -264,11 +340,22 @@ function _updatePortrait(ent) {
   elUnitName.className   = isGild ? 'gilded' : '';
   elUnitName.textContent = ent.label().toUpperCase();
 
-  // State badge under portrait — colour-coded like SC
+  // State badge under portrait — colour-coded, human readable for workers
   const badge = document.getElementById('portrait-badge');
   if (badge) {
     const st = ent.state || 'idle';
-    badge.textContent = st.toUpperCase();
+    let label = st.toUpperCase();
+    if (ent.subtype === 'worker') {
+      if (st === 'extracting')     label = ent._extractReady ? '⛏ DIGGING' : '→ TRASH';
+      else if (st === 'extract-return') {
+        label = ent.carriedType === 'salvage' ? '↩ SALVAGE ⚙' : '↩ SCRAP ♻';
+      }
+      else if (st === 'gathering') label = '→ DUMP';
+      else if (st === 'returning') label = ent.carriedType === 'salvage' ? '↩ SALVAGE ⚙' : '↩ SCRAP ♻';
+      else if (st === 'build')     label = '🔨 BUILDING';
+      else if (st === 'attacking') label = '⚔ FIGHTING';
+    }
+    badge.textContent = label;
     badge.className   = `st-${st.replace('-return','').replace('extract-','extract')}`;
   }
 
@@ -300,9 +387,25 @@ function _updatePortrait(ent) {
 
   // 2×3 stat grid
   const elArm = $('s-arm'), elSpd = $('s-spd'), elPop = $('s-pop');
-  elSAtk.textContent  = ent.atk    ? `${ent.atk}` : '—';
-  elSRng.textContent  = ent.atkRange > 2 ? `${ent.atkRange.toFixed(0)}` : 'MEL';
-  elSState.textContent = (ent.state || '—').toUpperCase();
+  // Transport shows cargo count instead of attack stats
+  if (ent.subtype === 'transport') {
+    elSAtk.textContent = `${ent.cargo?.length ?? 0}/${ent.capacity ?? 8}`;
+    elSRng.textContent = '🚐';
+  } else {
+    elSAtk.textContent = ent.atk ? `${ent.atk}` : '—';
+    elSRng.textContent = ent.atkRange > 2 ? `${ent.atkRange.toFixed(0)}` : 'MEL';
+  }
+  // Readable state in stat grid
+  {
+    const st = ent.state || '';
+    let stLabel = st.toUpperCase() || '—';
+    if (ent.subtype === 'worker') {
+      if (st === 'extracting')          stLabel = ent._extractReady ? 'DIGGING' : 'TO TRASH';
+      else if (st === 'extract-return') stLabel = ent.carriedType === 'salvage' ? 'HAUL⚙' : 'HAUL♻';
+      else if (st === 'returning')      stLabel = ent.carriedType === 'salvage' ? 'HAUL⚙' : 'HAUL♻';
+    }
+    elSState.textContent = stLabel;
+  }
   if (elArm) elArm.textContent = ent.armor != null ? `${ent.armor}` : '0';
   if (elSpd) elSpd.textContent = ent.speed ? `${ent.speed.toFixed(1)}` : '—';
   if (elPop) {
@@ -402,6 +505,17 @@ export function updatePanel() {
   elPaneSingle.style.display = 'flex';
   elPaneGroup.style.display  = 'none';
   _updatePortrait(ent);
+
+  const isEnemy = ent.faction !== config.playerFac && !ent.isRes;
+
+  // For enemy entities: stamp ⚠ ENEMY on name and badge so it's unmistakable
+  if (isEnemy) {
+    elUnitName.textContent = '⚠ ' + ent.label().toUpperCase();
+    const badge = document.getElementById('portrait-badge');
+    if (badge) { badge.textContent = 'ENEMY'; badge.className = 'st-attacking'; }
+    fillCmdCard(Array(9).fill(null), null);
+    return;
+  }
 
   // Fill command card based on entity type
   if (ent.isUnit && ent.faction === config.playerFac) {

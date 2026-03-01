@@ -13,15 +13,20 @@ export function dist(a, b) {
 }
 
 /** Issue a new move order with A* path to (tx, tz).
- *  Stores waypoints on ent._path; moveToward follows them. */
+ *  Transports that can traverse any terrain skip A* and go direct. */
 export function moveTo(ent, tx, tz) {
-  ent._path     = findPath(ent.x, ent.z, tx, tz);
+  if (ent.canTraverse) {
+    // Direct single-waypoint path — no navmesh needed
+    ent._path     = [{ x: tx, z: tz }];
+  } else {
+    ent._path     = findPath(ent.x, ent.z, tx, tz);
+  }
   ent._pathDest = { x: tx, z: tz };
 }
 
-const STUCK_TIME = 1.2;  // seconds without progress → consider stuck and nudge
+const STUCK_TIME = 0.5;  // seconds without progress → consider stuck and nudge
 
-const REPATH_INTERVAL = 0.22; // throttle auto-repaths so A* isn't called every frame
+const REPATH_INTERVAL = 0.12; // throttle auto-repaths so A* isn't called every frame
 
 /** Move entity toward (tx, tz) following the A* path if one exists.
  *  Returns true when within stopDist of the final destination.
@@ -32,7 +37,9 @@ export function moveToward(ent, tx, tz, stopDist, dt) {
   const dest = ent._pathDest;
   const destMoved = !dest || Math.hypot(dest.x - tx, dest.z - tz) > TILE * 2;
   const now = G.time ?? 0;
-  if (destMoved && (now - (ent._pathTime ?? -999)) >= REPATH_INTERVAL) {
+  // No existing path → repath immediately (new target, just went idle, etc.).
+  // Existing path but dest moved → throttle so A* isn't called every frame.
+  if (!dest || (destMoved && (now - (ent._pathTime ?? -999)) >= REPATH_INTERVAL)) {
     moveTo(ent, tx, tz);
     ent._pathTime = now;
   }
@@ -52,7 +59,7 @@ export function moveToward(ent, tx, tz, stopDist, dt) {
         ent._pathDest = null;
         ent._stuckAccum = 0;
         // Nudge perpendicular to movement to break out of blob
-        const nudge = 1.2;
+        const nudge = 2.5;
         const perpX = -dz / (d || 1);
         const perpZ = dx / (d || 1);
         const flip = (ent.id % 2) ? 1 : -1;
@@ -80,7 +87,7 @@ export function moveToward(ent, tx, tz, stopDist, dt) {
     const nx   = ent.x + (dx / d) * step;
     const nz   = ent.z + (dz / d) * step;
 
-    if (isPassable(nx, nz)) { ent.x = nx; ent.z = nz; }
+    if (ent.canTraverse || isPassable(nx, nz)) { ent.x = nx; ent.z = nz; }
     else if (isPassable(nx, ent.z)) { ent.x = nx; }
     else if (isPassable(ent.x, nz)) { ent.z = nz; }
     else {
@@ -133,17 +140,32 @@ export function separateUnits(ent) {
   if (!ent.isUnit) return;
   for (const other of G.entities) {
     if (other === ent || !other.alive || other.isRes) continue;
+
+    // Never push apart units that are in melee with each other —
+    // separation distance (2.0) exceeds melee atkRange (1.8) which
+    // would prevent damage from ever landing.
+    const entAttacking  = ent.state === 'attacking'   && ent.targetEnt === other;
+    const otherAttacking = other.isUnit && other.state === 'attacking' && other.targetEnt === ent;
+    if (entAttacking || otherAttacking) continue;
+
     const minD = other.isBldg ? other.size * 2 * 0.5 + 1.2 : 2.0;
     const d = dist(ent, other);
     if (d < minD && d > 0.01) {
       const push = (minD - d) * 0.5;
       const dx = (ent.x - other.x) / d;
       const dz = (ent.z - other.z) / d;
-      ent.x += dx * push;
-      ent.z += dz * push;
+      // Only push to passable tiles — never shove into TRASH/walls
+      const nx = ent.x + dx * push;
+      const nz = ent.z + dz * push;
+      if (isPassable(nx, nz)) { ent.x = nx; ent.z = nz; }
+      else if (isPassable(nx, ent.z)) { ent.x = nx; }
+      else if (isPassable(ent.x, nz)) { ent.z = nz; }
       if (other.isUnit) {
-        other.x -= dx * push * 0.5;
-        other.z -= dz * push * 0.5;
+        const ox = other.x - dx * push * 0.5;
+        const oz = other.z - dz * push * 0.5;
+        if (isPassable(ox, oz)) { other.x = ox; other.z = oz; }
+        else if (isPassable(ox, other.z)) { other.x = ox; }
+        else if (isPassable(other.x, oz)) { other.z = oz; }
       }
     }
   }
@@ -152,12 +174,11 @@ export function separateUnits(ent) {
 }
 
 /** Pick entity at a world position within an interaction radius. */
-export function entityAtWorld(wx, wz, maxDist = 6) {
+export function entityAtWorld(wx, wz, maxDist = 8) {
   let best = null, bestD = maxDist;
   for (const e of G.entities) {
     if (!e.alive) continue;
-    // Hit radius by type — resources need big radius so player can easily right-click to gather
-    const r = e.isBldg ? e.size * 2 * 0.55 : (e.isRes ? 9.0 : 1.8);
+    const r = e.isBldg ? e.size * TILE * 0.6 : (e.isRes ? 9.0 : 4.0);
     const d = Math.hypot(e.x - wx, e.z - wz);
     if (d < r && d < bestD) { bestD = d; best = e; }
   }

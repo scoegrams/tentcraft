@@ -3,13 +3,14 @@
 // Mirrors Warcraft's Building class + StatusPane production logic
 // ═══════════════════════════════════════════════════════════
 
-import { BLDG_DEFS, UNIT_DEFS, FAC } from './constants.js';
+import { BLDG_DEFS, UNIT_DEFS, FAC, TILE, WORLD_W } from './constants.js';
 import { G, getRes } from './state.js';
 import { Entity } from './entities.js';
-import { createBldgMesh, spawnParticles, spawnProjectile } from './renderer.js';
-import { sfxTower, sfxBuild, sfxDeath } from './sfx.js';
+import { createBldgMesh, spawnParticles, spawnProjectile, setRallyFlag,
+         flashEntityOnHit, spawnDmgNumber } from './renderer.js';
+import { sfxTower, sfxBuild, sfxDeath, sfxPiperSpawned } from './sfx.js';
 import { spawnUnit } from './units.js';
-import { findNearest } from './world.js';
+import { findNearest, moveTo } from './world.js';
 import { markBuilding } from './navmesh.js';
 
 export function spawnBuilding(subtype, faction, x, z, instant = false) {
@@ -19,6 +20,9 @@ export function spawnBuilding(subtype, faction, x, z, instant = false) {
   const ent       = new Entity('building', subtype, faction, x, z);
   ent.size        = def.size;
   ent.foodAdd     = def.foodAdd || 0;
+  // Rally point — null means units spawn at building edge, set by right-click
+  ent.rallyX      = null;
+  ent.rallyZ      = null;
 
   if (def.towerRange) {
     ent.towerRange = def.towerRange;
@@ -69,6 +73,8 @@ export function updateBuilding(ent, dt) {
         const wasAlive = enemy.alive;
         enemy.damage(ent.towerDmg, ent);
         ent.towerTimer = ent.towerCd;
+        flashEntityOnHit(enemy);
+        spawnDmgNumber(enemy.x, enemy.z, ent.towerDmg);
         const projCol = ent.faction === FAC.SCAV ? 0xffcc00 : 0xcc44ff;
         spawnProjectile(ent, enemy, projCol, 36);
         sfxTower();
@@ -87,11 +93,31 @@ export function updateBuilding(ent, dt) {
     ent.prodTimer += dt;
 
     if (ent.prodTimer >= ent.prodMax) {
-      const offset = ent.size * 2 * 0.5 + 2.5;
-      spawnUnit(unitType, ent.faction,
+      // Spawn on the side of the building that faces the enemy (toward map centre)
+      const facingDir = ent.x > WORLD_W / 2 ? -1 : 1;
+      const offset    = (ent.size * TILE * 0.5 + 3) * facingDir;
+      const unit = spawnUnit(unitType, ent.faction,
         ent.x + offset,
         ent.z + (Math.random() * 4 - 2)
       );
+      // Piper announces when spawned from SCAV Mess Hall
+      if (unit && ent.faction === FAC.SCAV && unitType === 'infantry') {
+        sfxPiperSpawned();
+      }
+      if (unit) {
+        if (ent.rallyX !== null) {
+          // Player-set rally point — march there
+          unit.targetX = ent.rallyX; unit.targetZ = ent.rallyZ; unit.state = 'move';
+          moveTo(unit, ent.rallyX, ent.rallyZ);
+        } else {
+          // No rally: nudge the unit clear of the building cluster so it
+          // doesn't pile up at the door and block future spawns.
+          const clearX = ent.x + facingDir * 16;
+          unit.targetX = clearX; unit.targetZ = ent.z;
+          unit.state   = 'move';
+          moveTo(unit, clearX, ent.z);
+        }
+      }
       ent.prodQueue.shift();
       ent.prodTimer = 0;
     }

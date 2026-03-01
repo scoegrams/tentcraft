@@ -22,13 +22,12 @@ export const G = {
 
   gameOver:    false,
 
-  // Player (Scavengers) — start with enough for a tent + barracks,
-  // matching Warcraft II's 2000g starting gold feel at our scale.
-  player: { scrap: 500, salvage: 100, pop: 0, popCap: 0 },
+  // Both factions start equal — same bank, same starting pop.
+  // The AI must earn the rest through workers, just like the player.
+  player: { scrap: 500, salvage: 300, pop: 0, popCap: 0 },
 
-  // AI (Gilded) — slightly larger war chest to compensate for no workers
   ai: {
-    scrap: 600, salvage: 200,
+    scrap: 500, salvage: 300,
     pop: 0, popCap: 0,
     buildTimer: 0,
     attackTimer: 0,
@@ -47,6 +46,6 @@ export function canAfford(faction, costs) {
 
 export function spend(faction, costs) {
   const r = getRes(faction);
-  r.scrap   -= (costs[0] || 0);
-  r.salvage -= (costs[1] || 0);
+  r.scrap   = Math.max(0, r.scrap   - (costs[0] || 0));
+  r.salvage = Math.max(0, r.salvage - (costs[1] || 0));
 }

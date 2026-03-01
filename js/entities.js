@@ -81,11 +81,18 @@ export class Entity {
   }
 
   // ── Damage — visual effects triggered via renderer callback ─
-  damage(amount, _attacker) {
+  damage(amount, attacker) {
     if (!this.alive) return;
     this.hp = Math.max(0, this.hp - amount);
-    // Particle effect hook — called by renderer
     this._onDamage?.();
+    // WC2 retaliation: idle/moving units auto-target their attacker
+    if (attacker?.alive && this.isUnit && !this.suicide &&
+        (this.state === 'idle' || this.state === 'move')) {
+      this.targetEnt = attacker;
+      this.state = 'attacking';
+      this._path = null;
+      this._pathDest = null;
+    }
     if (this.hp <= 0) this.kill();
   }
 

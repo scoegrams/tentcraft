@@ -11,7 +11,7 @@ import { config } from './config.js';
 import { getUnitCost } from './constants.js';
 import { G, canAfford, spend } from './state.js';
 import { spawnBuilding } from './buildings.js';
-import { spawnUnit } from './units.js';
+import { spawnUnit, assignExtractTarget } from './units.js';
 import { findHQ, findNearest, dist } from './world.js';
 import { nearestTrashWithSalvage } from './terrain.js';
 
@@ -24,10 +24,9 @@ function _manageWorkers() {
     if (w.subtype !== 'worker' || w.state !== 'idle') continue;
 
     // Prefer TRASH so most workers clear paths (get scrap 2× more often than salvage)
-    const trash = nearestTrashWithSalvage(w.x, w.z, 50);
+    const trash = nearestTrashWithSalvage(w.x, w.z, 80);
     if (trash) {
-      w.extractTarget = trash;
-      w.state = 'extracting';
+      assignExtractTarget(w, trash); // handles claiming so workers spread across piles
       continue;
     }
 
@@ -72,8 +71,8 @@ function _defendBase(aiHQ) {
 
 // ── Grouped attack wave ───────────────────────────────────
 // Waits until a minimum army threshold is reached, then sends
-// the ENTIRE idle army at once (Warcraft's "send all" order).
-// This prevents the one-at-a-time trickle the old code had.
+// a capped group with a small per-unit stagger so they charge
+// as a squad rather than teleporting to "attacking" all at once.
 function _launchWave(ai) {
   const playerHQ = findHQ(config.playerFac);
   if (!playerHQ) return;
@@ -84,21 +83,28 @@ function _launchWave(ai) {
   );
 
   // Don't attack unless we have a meaningful force assembled
-  const minForce = Math.max(3, Math.min(ai.waveSize, 8));
+  const minForce = Math.max(3, Math.min(ai.waveSize, 7));
   if (idleArmy.length < minForce) return;
 
-  // Find the most forward (closest to player) enemy structure to attack —
-  // not always the HQ, sometimes a barracks or tower is closer
+  // Cap wave size — excess units stay idle and join the next wave
+  const WAVE_CAP = 6;
+  const wave = idleArmy.slice(0, WAVE_CAP);
+
+  // Find the most forward (closest to player) enemy structure to attack
   const target = G.entities.reduce((best, e) => {
     if (!e.alive || !e.isBldg || e.faction !== config.playerFac) return best;
-    const d = dist(e, idleArmy[0]);
-    return (!best || d < dist(best, idleArmy[0])) ? e : best;
+    const d = dist(e, wave[0]);
+    return (!best || d < dist(best, wave[0])) ? e : best;
   }, null) || playerHQ;
 
-  for (const u of idleArmy) {
-    u.targetEnt = target;
-    u.state     = 'attacking';
-  }
+  // Stagger each unit by 0.3s so they charge as a squad, not a teleport
+  wave.forEach((u, i) => {
+    u._waveDelay    = i * 0.3;
+    u._waveTarget   = target;
+    u.targetEnt     = target;
+    u.state         = 'attacking';
+  });
+
   ai.waveSize = Math.min(ai.waveSize + 1, 14);
 }
 
@@ -116,9 +122,7 @@ export function updateAI(dt) {
   const aiHQ = findHQ(config.aiFac);
   if (!aiHQ) return;
 
-  // ── Passive scrap income ────────────────────────────────
-  // Supplemental income so the AI can keep building while workers gather.
-  ai.scrap += 10 * dt;
+  // No passive income — the AI earns everything through workers, same as the player.
 
   // ── Worker idle check (every 1s) ───────────────────────
   if (ai.workerTimer > 1) {
@@ -152,28 +156,38 @@ export function updateAI(dt) {
       spawnBuilding('housing', config.aiFac, aiHQ.x + ox, aiHQ.z + oz, true);
     }
 
-    // Priority 2: barracks (military production)
+    // All AI building offsets are relative to HQ and placed BEHIND it (away from
+    // the enemy) so the gap in front stays clear for units to march through.
+    // The AI's HQ is always on the far side of the map (opposite the player),
+    // so "behind" means further away from map centre.
+    const behindDir = aiHQ.x > 120 ? 1 : -1; // +1 = east (GILD), -1 = west (SCAV)
+
+    // Priority 2: barracks (military production) — behind and to the side
     if (!hasBarracks && canAfford(config.aiFac, BLDG_DEFS.barracks.cost)) {
       spend(config.aiFac, BLDG_DEFS.barracks.cost);
-      spawnBuilding('barracks', config.aiFac, aiHQ.x - 16, aiHQ.z + 10, true);
+      spawnBuilding('barracks', config.aiFac, aiHQ.x + behindDir * 14, aiHQ.z + 16, true);
     }
 
-    // Priority 3: defensive towers (west-facing, spaced apart)
+    // Priority 3: defensive towers — placed in FRONT of HQ (facing enemy)
     if (towerCount < 3 && hasBarracks && canAfford(config.aiFac, BLDG_DEFS.tower.cost)) {
-      const tOffsets = [[-20, -16], [-20, 16], [-30, 0]];
-      const [ox, oz] = tOffsets[towerCount] || [-20, 0];
+      const tOffsets = [
+        [-behindDir * 22,  0],
+        [-behindDir * 22, -18],
+        [-behindDir * 22,  18],
+      ];
+      const [ox, oz] = tOffsets[towerCount] || [-behindDir * 22, 0];
       spend(config.aiFac, BLDG_DEFS.tower.cost);
       spawnBuilding('tower', config.aiFac, aiHQ.x + ox, aiHQ.z + oz, true);
     }
 
-    // Priority 4: upgrade + magic for tech diversity
+    // Priority 4: upgrade + magic — behind HQ, well clear of the march lane
     if (hasBarracks && !hasUpgrade && canAfford(config.aiFac, BLDG_DEFS.upgrade.cost)) {
       spend(config.aiFac, BLDG_DEFS.upgrade.cost);
-      spawnBuilding('upgrade', config.aiFac, aiHQ.x - 16, aiHQ.z - 10, true);
+      spawnBuilding('upgrade', config.aiFac, aiHQ.x + behindDir * 14, aiHQ.z - 16, true);
     }
     if (hasBarracks && !hasMagic && canAfford(config.aiFac, BLDG_DEFS.magic.cost)) {
       spend(config.aiFac, BLDG_DEFS.magic.cost);
-      spawnBuilding('magic', config.aiFac, aiHQ.x - 24, aiHQ.z, true);
+      spawnBuilding('magic', config.aiFac, aiHQ.x + behindDir * 26, aiHQ.z, true);
     }
   }
 
@@ -193,6 +207,11 @@ export function updateAI(dt) {
     e => e.alive && e.isUnit && e.faction === config.aiFac && e.subtype === 'worker'
   ).length;
 
+  // Worker target scales with game progression: start at 4, grow to 6 over time.
+  // Also bump target if the treasury is running low (needs more income).
+  const resourcesPoor = ai.scrap < 150 || ai.salvage < 60;
+  const workerTarget = Math.min(6, 3 + Math.floor(ai.waveSize / 3)) + (resourcesPoor ? 1 : 0);
+
   for (const b of aiBldgs) {
     if (b.isBuilding || b.prodQueue.length >= 2) continue;
     if (ai.pop >= ai.popCap) continue;
@@ -200,14 +219,18 @@ export function updateAI(dt) {
     let ut = null;
 
     if (b.subtype === 'hq') {
-      if (workerCount < 4) ut = 'worker';
+      // Workers always come first — no military if we can't pay for it
+      if (workerCount < workerTarget) ut = 'worker';
     } else if (b.subtype === 'barracks') {
-      const roll = Math.random();
-      ut = roll < 0.45 ? 'infantry' : roll < 0.75 ? 'ranged' : 'siege';
+      // Don't queue military units if we're broke — save up first
+      if (!resourcesPoor || workerCount >= workerTarget) {
+        const roll = Math.random();
+        ut = roll < 0.45 ? 'infantry' : roll < 0.75 ? 'ranged' : 'siege';
+      }
     } else if (b.subtype === 'upgrade') {
-      ut = Math.random() < 0.5 ? 'heavy' : null;
+      if (!resourcesPoor) ut = Math.random() < 0.5 ? 'heavy' : null;
     } else if (b.subtype === 'magic') {
-      ut = Math.random() < 0.35 ? 'caster' : null;
+      if (!resourcesPoor) ut = Math.random() < 0.35 ? 'caster' : null;
     }
 
     const cost = getUnitCost(ut, config.aiFac);

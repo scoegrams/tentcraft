@@ -29,44 +29,51 @@ export const COL = {
 // Scaled to match Warcraft II's feel: ~5-8 workers needed for full army,
 // first unit train ~5s, peak army takes 3-4 mins to assemble.
 // label[0] = Scavenger name, label[1] = Gilded name
-// cost = default [scrap, salvage]; costByFaction overrides per faction so Scavengers use Salvage too
+// cost = default [scrap, salvage]; costByFaction can override per faction if needed
 export const UNIT_DEFS = {
   worker: {
     hp: 45,  atk: 7,   range: 1.6, speed: 3.8, atkCd: 1.2,
     cost: [100, 0], pop: 1, buildTime: 3,
-    costByFaction: { scav: [80, 20], gild: [100, 0] },
     label: ['The Scavenger', 'The Assistant'],
   },
   infantry: {
     hp: 90,  atk: 14,  range: 1.8, speed: 3.2, atkCd: 1.0,
     cost: [200, 0], pop: 1, buildTime: 5,
-    costByFaction: { scav: [170, 30], gild: [200, 0] },
-    label: ['The Hooded', 'The Enforcer'],
+    label: ['The Piper', 'The Enforcer'],
   },
   ranged: {
-    hp: 65,  atk: 13,  range: 9,   speed: 3.0, atkCd: 1.2,
+    hp: 80,  atk: 13,  range: 9,   speed: 3.4, atkCd: 1.2,
     cost: [160, 40], pop: 1, buildTime: 5,
+    kite: true,   // backs away when melee closes
     label: ['The Slinger', 'Tactical Guard'],
   },
   heavy: {
     hp: 150, atk: 18,  range: 1.8, speed: 2.2, atkCd: 1.0,
     cost: [300, 80], pop: 2, buildTime: 8,
-    label: ['The Brute', 'The Bodyguard'],
+    label: ['The Toyota', 'The Bodyguard'],
   },
   siege: {
     hp: 75,  atk: 120, range: 2.5, speed: 2.5, atkCd: 0,
     cost: [200, 50], pop: 1, buildTime: 6,
-    label: ['The Fire-Eater', 'Cancellation Drone'],
+    label: ['DraKo', 'Cancellation Drone'],
     suicide: true,
   },
   caster: {
-    hp: 60,  atk: 10,  range: 8,   speed: 2.6, atkCd: 1.5,
-    cost: [350, 100], pop: 1, buildTime: 10,
+    hp: 65,  atk: 14,  range: 11,  speed: 2.8, atkCd: 1.3,
+    cost: [260, 70], pop: 1, buildTime: 9,
+    kite: true,   // backs away when melee closes
     label: ['The Hacker', 'Media Consultant'],
+  },
+  transport: {
+    hp: 220, atk: 0, range: 0, speed: 5.8, atkCd: 0,
+    cost: [350, 120], pop: 2, buildTime: 12,
+    capacity: 8,      // max boarding passengers
+    canTraverse: true, // ignores passability — drives over water/trash
+    label: ['The Sprinter', 'Gilded Transit'],
   },
 };
 
-/** Unit cost for a faction (Scavengers pay Salvage for workers/infantry). */
+/** Unit cost for a faction. */
 export function getUnitCost(unitType, faction) {
   const def = UNIT_DEFS[unitType];
   if (!def) return [0, 0];
@@ -92,7 +99,7 @@ export const BLDG_DEFS = {
   hq: {
     hp: 1600, size: 4, cost: [0, 0], buildTime: 0, foodAdd: 4,
     label: ['The Squat', 'The Gated Manor'],
-    produces: ['worker'],
+    produces: ['worker', 'transport'],
     requires: [],
   },
   housing: {
@@ -138,11 +145,12 @@ export const BLDG_DEFS = {
 // ── PORTRAITS — icon per faction per type ────────────────────
 export const PORTRAITS = {
   worker:    { scav: '🧱', gild: '📋', col: '#78350f' },
-  infantry:  { scav: '⚔️',  gild: '🛡️', col: '#7c2d12' },
-  ranged:    { scav: '🏹', gild: '🎯', col: '#713f12' },
-  heavy:     { scav: '🔨', gild: '💼', col: '#431407' },
-  siege:     { scav: '🔥', gild: '📡', col: '#450a0a' },
+  infantry:  { scav: '🪛',  gild: '🛡️', col: '#7c2d12' },
+  ranged:    { scav: '🔫', gild: '🎯', col: '#713f12' },
+  heavy:     { scav: '🛻', gild: '💼', col: '#431407' },
+  siege:     { scav: '💥', gild: '📡', col: '#450a0a' },
   caster:    { scav: '☠️', gild: '📺', col: '#2e1065' },
+  transport: { scav: '🚐', gild: '🚌', col: '#1a2a0a' },
   hq:        { scav: '🏚️', gild: '🏛️', col: '#1c1208' },
   housing:   { scav: '⛺', gild: '🏘️', col: '#1a1a0a' },
   barracks:  { scav: '⚒️', gild: '🚔', col: '#1c0a0a' },
@@ -161,7 +169,7 @@ export const PORTRAITS = {
 // Scavengers: raw, scrappy building names
 export const CMD_WORKER = [
   { icon: '⛺', label: 'Tent City',  key: 'T', action: 'build:housing' },
-  { icon: '⚒️',  label: 'Mess Hall',  key: 'M', action: 'build:barracks' },
+  { icon: '⚒️',  label: 'Mess Hall',  key: 'B', action: 'build:barracks' },
   { icon: '🔧', label: 'Chop Shop',  key: 'C', action: 'build:upgrade' },
   { icon: '💻', label: 'Comp Lab',   key: 'L', action: 'build:magic' },
   { icon: '🗼', label: 'Turret',     key: 'J', action: 'build:tower' },
@@ -173,7 +181,7 @@ export const CMD_WORKER = [
 // Gilded: polished, corporate building names
 export const CMD_WORKER_GILD = [
   { icon: '🏘️', label: 'Studio Apts',    key: 'T', action: 'build:housing' },
-  { icon: '🚔', label: 'Security HQ',    key: 'M', action: 'build:barracks' },
+  { icon: '🚔', label: 'Security HQ',    key: 'B', action: 'build:barracks' },
   { icon: '🔬', label: 'Design Studio',  key: 'C', action: 'build:upgrade' },
   { icon: '📡', label: 'PR Firm',        key: 'L', action: 'build:magic' },
   { icon: '📶', label: 'Emitter Tower',  key: 'J', action: 'build:tower' },
@@ -188,28 +196,37 @@ export const CMD_COMBAT = [
   { icon: '⛔', label: 'Stop',       key: 'S', action: 'stop', cls: 'cmd-cancel' },
 ];
 
+export const CMD_TRANSPORT = [
+  { icon: '📦', label: 'Unload All', key: 'U', action: 'unload' },
+  { icon: '🚶', label: 'Move',       key: 'M', action: 'move' },
+  null, null, null, null, null, null,
+  { icon: '⛔', label: 'Stop',       key: 'S', action: 'stop', cls: 'cmd-cancel' },
+];
+
 // Unit type → command card (Scavenger defaults; Gilded overridden in ui.js by faction)
 export const CMD_BY_UNIT = {
-  worker:   CMD_WORKER,
-  infantry: CMD_COMBAT,
-  ranged:   CMD_COMBAT,
-  heavy:    CMD_COMBAT,
-  siege:    CMD_COMBAT,
-  caster:   CMD_COMBAT,
+  worker:    CMD_WORKER,
+  infantry:  CMD_COMBAT,
+  ranged:    CMD_COMBAT,
+  heavy:     CMD_COMBAT,
+  siege:     CMD_COMBAT,
+  caster:    CMD_COMBAT,
+  transport: CMD_TRANSPORT,
 };
 
 export const UNIT_DESCS = {
   worker:    'Gathers Scrap from Dumps. Right-click TRASH to dig through it — you get Scrap 2× more than Salvage and open a path to the enemy. Build an Extractor to shorten salvage runs.',
   // Gilded worker overridden at display time — see ui.js _descForEnt()
-  infantry:  'Frontline brawler. Melee range, high damage.',
-  ranged:    'Throws glass shards from medium range.',
-  heavy:     'Slow armored bruiser. Counters massed infantry.',
-  siege:     'Suicide bomber. Detonates in AoE near enemies.',
+  infantry:  'The Piper. Melee scrapper with a steel pipe — hits hard up close.',
+  ranged:    'The Slinger. Light gun, mid-range. Quick and cheap.',
+  heavy:     'The Toyota. Pickup truck with a gun welded to the bed — slow but punishes anything in front of it.',
+  siege:     'DraKo. Runs into the enemy and detonates a blast cannon — massive AoE.',
   caster:    'Bio-hacker firing poison drones at range.',
+  transport: 'The Sprinter. Fast van that carries up to 8 warriors across any terrain — water, trash, you name it. Right-click friendly units onto it to board. Select it and press U (or click Unload) to drop them.',
   hq:        'Your base of operations. Destroy the enemy HQ to win.',
   housing:   'Increases population cap by +4.',
   barracks:  'Trains combat units: Infantry, Ranged, Siege.',
-  upgrade:   'Trains heavy units: The Brute.',
+  upgrade:   'Trains heavy units: The Toyota.',
   tower:     'Auto-fires at approaching enemies. Passive defense.',
   magic:     'Trains Hackers and unlocks advanced abilities.',
   dump:      'Abandoned waste site. Workers gather Scrap here. Each trip yields 20 Scrap.',
@@ -226,4 +243,5 @@ export const UNIT_DESCS_GILD = {
   heavy:     'Private Bodyguard. Heavily armored close-protection unit.',
   siege:     'Cancellation Drone. Remote-detonated suppression weapon.',
   caster:    'Media Consultant. Broadcast propaganda at range.',
+  transport: 'Gilded Transit. Armored shuttle carrying up to 8 operatives across any terrain. Board by right-clicking it with units selected. Press U to unload.',
 };
