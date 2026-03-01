@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TentCraft — Map Architect</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #080604; color: #8a7040;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    }
+    #toolbar {
+      background: #0c0a06; border-bottom: 1px solid #1a1408;
+      padding: 6px 12px; display: flex; align-items: center; gap: 16px;
+      flex-shrink: 0;
+    }
+    #toolbar h1 { font-size: 11px; color: #c89600; letter-spacing: .2em; }
+    .tb-group { display: flex; gap: 6px; align-items: center; }
+    .tb-label { color: #3a2e18; font-size: 9px; letter-spacing: .1em; }
+    button, select {
+      background: #0a0804; border: 1px solid #2a1e0a; color: #6a5030;
+      font-family: 'Courier New', monospace; font-size: 10px;
+      padding: 3px 10px; cursor: pointer; letter-spacing: .08em;
+    }
+    button:hover { color: #c89600; border-color: #5a3800; }
+    button.active { color: #c85010; border-color: #c85010; }
+    #main { display: flex; flex: 1; min-height: 0; }
+    #sidebar {
+      width: 220px; flex-shrink: 0;
+      background: #0a0804; border-right: 1px solid #1a1408;
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .side-section { border-bottom: 1px solid #1a1408; padding: 8px 10px; }
+    .side-title { font-size: 8px; letter-spacing: .2em; color: #2e2410; margin-bottom: 6px; }
+    .tile-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 6px; cursor: pointer; margin-bottom: 3px;
+      border: 1px solid transparent;
+    }
+    .tile-btn:hover  { border-color: #2a1e0a; }
+    .tile-btn.active { border-color: #c89600; }
+    .tile-swatch { width: 12px; height: 12px; flex-shrink: 0; }
+    .tile-label  { font-size: 9px; color: #4a3820; letter-spacing: .06em; }
+    .tile-desc   { font-size: 8px; color: #2a1e0e; margin-left: 20px; margin-bottom: 4px; }
+    #canvas-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #060402; overflow: hidden; position: relative;
+    }
+    #map-canvas {
+      image-rendering: pixelated; cursor: crosshair;
+      box-shadow: 0 0 0 1px #1a1408;
+    }
+    #info-bar {
+      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.7); border: 1px solid #1a1408;
+      padding: 3px 10px; font-size: 9px; color: #3a2e18;
+      pointer-events: none;
+    }
+    #stats { padding: 8px 10px; }
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .stat-key { color: #2a2010; font-size: 9px; }
+    .stat-val { color: #6a5030; font-size: 9px; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>TENTCRAFT // MAP ARCHITECT</h1>
+  <div class="tb-group">
+    <span class="tb-label">MAP:</span>
+    <select id="map-select">
+      <option value="great-divide">The Great Divide</option>
+      <option value="landfill-circuit">Landfill Circuit</option>
+      <option value="breadline">The Breadline</option>
+    </select>
+  </div>
+  <div class="tb-group">
+    <span class="tb-label">SEED:</span>
+    <input id="seed-input" type="number" value="1337"
+      style="width:70px;background:#0a0804;border:1px solid #2a1e0a;color:#6a5030;font-family:monospace;font-size:10px;padding:3px 6px;">
+    <button onclick="regenerate()">REGENERATE</button>
+  </div>
+  <div class="tb-group">
+    <span class="tb-label">ZOOM:</span>
+    <button onclick="zoom(-1)">−</button>
+    <button onclick="zoom(1)">+</button>
+  </div>
+  <div class="tb-group">
+    <button id="paint-toggle" onclick="togglePaint()">PAINT MODE: OFF</button>
+  </div>
+  <div class="tb-group">
+    <button onclick="exportMap()">EXPORT JSON</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div class="side-section">
+      <div class="side-title">// TERRAIN LEGEND</div>
+      <div id="tile-palette"></div>
+    </div>
+    <div class="side-section" id="stats">
+      <div class="side-title">// MAP STATS</div>
+      <div id="stat-rows"></div>
+    </div>
+    <div class="side-section">
+      <div class="side-title">// CONTROLS</div>
+      <div style="font-size:9px;color:#2a1e0e;line-height:1.8">
+        HOVER — inspect tile<br>
+        CLICK — paint (paint mode)<br>
+        SCROLL — zoom<br>
+        R — regenerate with new seed<br>
+        E — export to JSON<br>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="map-canvas"></canvas>
+    <div id="info-bar">TILE (0, 0) — CONCRETE</div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    T, T_PASSABLE,
+    generateGreatDivide, generateLandfillCircuit, generateBreadline,
+    mulberry32,
+  } from './mapgen.js';
+
+  const MAP_W = 120, MAP_H = 120;
+  const GENERATORS = {
+    'great-divide':     generateGreatDivide,
+    'landfill-circuit': generateLandfillCircuit,
+    'breadline':        generateBreadline,
+  };
+
+  const T_META = [
+    { type: T.CONCRETE, name: 'CONCRETE', desc: 'Passable — dark asphalt',      col: '#1a1612', rgb: [26, 22, 18] },
+    { type: T.CRACKED,  name: 'CRACKED',  desc: 'Passable — light concrete',    col: '#28201a', rgb: [40, 32, 26] },
+    { type: T.SLUDGE,   name: 'SLUDGE',   desc: 'Impassable — toxic pool',      col: '#0e1a0a', rgb: [14, 26, 10] },
+    { type: T.RUBBLE,   name: 'RUBBLE',   desc: 'Impassable — collapsed debris', col: '#2e2820', rgb: [46, 40, 32] },
+    { type: T.TRASH,    name: 'TRASH',    desc: 'Impassable — rummage heap',    col: '#1e180a', rgb: [30, 24, 10] },
+  ];
+
+  // Bright overlay colors for visibility in the viewer
+  const VIEW_COL = [
+    [30, 26, 20],    // CONCRETE — warm dark
+    [55, 45, 30],    // CRACKED  — lighter warm
+    [20, 60, 12],    // SLUDGE   — toxic green
+    [80, 72, 58],    // RUBBLE   — grey
+    [90, 60, 15],    // TRASH    — amber brown
+  ];
+
+  let _tiles  = null;
+  let _zoom   = 4;
+  let _paintMode = false;
+  let _activeTile = T.TRASH;
+  let _currentMap = 'great-divide';
+  let _seed       = 1337;
+
+  const cv  = document.getElementById('map-canvas');
+  const ctx = cv.getContext('2d');
+
+  // ── Build tile palette ────────────────────────────────
+  const palette = document.getElementById('tile-palette');
+  T_META.forEach(m => {
+    const btn = document.createElement('div');
+    btn.className = 'tile-btn' + (m.type === _activeTile ? ' active' : '');
+    btn.innerHTML = `
+      <div class="tile-swatch" style="background:${m.col}"></div>
+      <span class="tile-label">${m.name}</span>`;
+    btn.title = m.desc;
+    btn.addEventListener('click', () => {
+      _activeTile = m.type;
+      document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    palette.appendChild(btn);
+
+    const desc = document.createElement('div');
+    desc.className = 'tile-desc';
+    desc.textContent = m.desc;
+    palette.appendChild(desc);
+  });
+
+  // ── Generation ────────────────────────────────────────
+  function generate(mapId, seed) {
+    const fn = GENERATORS[mapId];
+    if (!fn) return;
+    _tiles = fn(MAP_W, MAP_H, seed);
+    draw();
+    updateStats();
+  }
+
+  window.regenerate = function () {
+    _seed = parseInt(document.getElementById('seed-input').value) || 1337;
+    _currentMap = document.getElementById('map-select').value;
+    generate(_currentMap, _seed);
+  };
+
+  window.zoom = function (dir) {
+    _zoom = Math.max(1, Math.min(8, _zoom + dir));
+    cv.width  = MAP_W * _zoom;
+    cv.height = MAP_H * _zoom;
+    draw();
+  };
+
+  window.togglePaint = function () {
+    _paintMode = !_paintMode;
+    document.getElementById('paint-toggle').textContent =
+      'PAINT MODE: ' + (_paintMode ? 'ON' : 'OFF');
+    document.getElementById('paint-toggle').classList.toggle('active', _paintMode);
+  };
+
+  // ── Draw ─────────────────────────────────────────────
+  function draw() {
+    if (!_tiles) return;
+    const iw = MAP_W, ih = MAP_H;
+    const raw = ctx.createImageData(iw, ih);
+    for (let y = 0; y < ih; y++) {
+      for (let x = 0; x < iw; x++) {
+        const t   = _tiles[y * iw + x];
+        const col = VIEW_COL[t] ?? VIEW_COL[0];
+        const i   = (y * iw + x) * 4;
+        raw.data[i]   = col[0];
+        raw.data[i+1] = col[1];
+        raw.data[i+2] = col[2];
+        raw.data[i+3] = 255;
+      }
+    }
+    // Draw to offscreen then scale
+    const off = document.createElement('canvas');
+    off.width = iw; off.height = ih;
+    off.getContext('2d').putImageData(raw, 0, 0);
+    cv.width  = iw * _zoom;
+    cv.height = ih * _zoom;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, iw * _zoom, ih * _zoom);
+  }
+
+  // ── Stats ─────────────────────────────────────────────
+  function updateStats() {
+    if (!_tiles) return;
+    const counts = [0, 0, 0, 0, 0];
+    for (const t of _tiles) counts[t]++;
+    const total = _tiles.length;
+    const rows  = document.getElementById('stat-rows');
+    rows.innerHTML = T_META.map(m =>
+      `<div class="stat-row">
+        <span class="stat-key">${m.name}</span>
+        <span class="stat-val">${counts[m.type]} (${((counts[m.type]/total)*100).toFixed(1)}%)</span>
+      </div>`
+    ).join('') + `<div class="stat-row" style="margin-top:4px;border-top:1px solid #1a1408;padding-top:4px">
+      <span class="stat-key">PASSABLE</span>
+      <span class="stat-val">${((counts[T.CONCRETE]+counts[T.CRACKED])/total*100).toFixed(1)}%</span>
+    </div>`;
+  }
+
+  // ── Mouse interaction ─────────────────────────────────
+  const info = document.getElementById('info-bar');
+  cv.addEventListener('mousemove', e => {
+    if (!_tiles) return;
+    const r  = cv.getBoundingClientRect();
+    const tx = Math.floor((e.clientX - r.left) / _zoom);
+    const ty = Math.floor((e.clientY - r.top)  / _zoom);
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return;
+    const t  = _tiles[ty * MAP_W + tx];
+    const m  = T_META.find(x => x.type === t);
+    info.textContent = `TILE (${tx}, ${ty}) — ${m?.name ?? '?'} | WORLD (${tx*2}, ${ty*2})`;
+    if (_paintMode && e.buttons === 1) paint(tx, ty);
+  });
+
+  cv.addEventListener('mousedown', e => {
+    if (!_paintMode || !_tiles) return;
+    const r  = cv.getBoundingClientRect();
+    const tx = Math.floor((e.clientX - r.left) / _zoom);
+    const ty = Math.floor((e.clientY - r.top)  / _zoom);
+    paint(tx, ty);
+  });
+
+  function paint(tx, ty) {
+    _tiles[ty * MAP_W + tx] = _activeTile;
+    draw();
+  }
+
+  // ── Export ────────────────────────────────────────────
+  window.exportMap = function () {
+    if (!_tiles) return;
+    const obj = {
+      id:     _currentMap,
+      seed:   _seed,
+      width:  MAP_W, height: MAP_H,
+      tiles:  Array.from(_tiles),
+    };
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `${_currentMap}-s${_seed}.json`;
+    a.click();
+  };
+
+  // ── Keyboard ──────────────────────────────────────────
+  window.addEventListener('keydown', e => {
+    if (e.key === 'r' || e.key === 'R') window.regenerate();
+    if (e.key === 'e' || e.key === 'E') window.exportMap();
+    if (e.key === '+' || e.key === '=') window.zoom(1);
+    if (e.key === '-') window.zoom(-1);
+  });
+
+  // ── Map select ────────────────────────────────────────
+  document.getElementById('map-select').addEventListener('change', e => {
+    _currentMap = e.target.value;
+    generate(_currentMap, _seed);
+  });
+
+  // ── Boot ──────────────────────────────────────────────
+  generate('great-divide', 1337);
+</script>
+
+</body>
+</html>

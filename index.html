@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tent City Craft — The Great Divide</title>
+  <link rel="stylesheet" href="css/hud.css">
+</head>
+<body>
+
+  <!-- Game canvas (Three.js renders here) -->
+  <canvas id="c" oncontextmenu="return false;"></canvas>
+
+  <!-- Visual overlays -->
+  <div class="vignette"></div>
+  <div class="scanlines"></div>
+
+  <!-- ── TOP RESOURCE BAR ── -->
+  <div id="topbar">
+    <div class="res-chip">
+      <div class="res-icon ri-scrap">♻</div>
+      <span class="res-label">Scrap</span>
+      <span class="res-val" id="r-scrap">200</span>
+    </div>
+    <div class="res-chip">
+      <div class="res-icon ri-salv">⚙</div>
+      <span class="res-label">Salvage</span>
+      <span class="res-val" id="r-salv">100</span>
+    </div>
+    <div class="res-chip">
+      <div class="res-icon ri-pop">▲</div>
+      <span class="res-label">Pop</span>
+      <span class="res-val" id="r-pop">0/4</span>
+    </div>
+    <div id="r-faction">▌ THE GREAT DIVIDE ▌</div>
+    <div class="res-chip">
+      <div class="res-icon ri-wave">⚠</div>
+      <span class="res-label">Wave</span>
+      <span class="res-val" id="r-wave">1</span>
+    </div>
+  </div>
+
+  <!-- Build mode notification -->
+  <div id="build-notif"></div>
+
+  <!-- Drag selection box -->
+  <div id="selbox"></div>
+
+  <!-- Status text bar (Warcraft's StatusBar) -->
+  <div id="statusbar">
+    <span id="statusbar-text">Select a unit or building...</span>
+  </div>
+
+  <!-- ── BOTTOM HUD (Warcraft 3-panel layout) ── -->
+  <div id="hud">
+
+    <!-- LEFT: Minimap (Warcraft's Minimap.cs) -->
+    <div id="minimap-wrap" class="hud-panel">
+      <canvas id="minimap" width="148" height="148"></canvas>
+      <div id="mm-label">SECTOR MAP</div>
+    </div>
+
+    <!-- CENTER: Status Pane (Warcraft's StatusPane.cs + SingleStatusPane.cs) -->
+    <div id="status-pane" class="hud-panel">
+
+      <!-- Single unit/building selected -->
+      <div id="pane-single">
+        <div id="portrait-frame">
+          <div id="portrait-bg"></div>
+          <div id="portrait-icon">⛺</div>
+        </div>
+        <div id="pane-info">
+          <div id="unit-name">— NOTHING SELECTED —</div>
+
+          <!-- HP bar — color changes green→yellow→red (mirrors SingleStatusPane hitPointColors) -->
+          <div class="bar-row">
+            <span class="bar-label">HP</span>
+            <div class="bar-track">
+              <div class="bar-fill hp-high" id="bar-hp" style="width:0%"></div>
+            </div>
+            <span class="bar-val" id="val-hp"></span>
+          </div>
+
+          <!-- Resource remaining (for resource nodes) -->
+          <div class="bar-row" id="row-mp" style="display:none">
+            <span class="bar-label">RES</span>
+            <div class="bar-track">
+              <div class="bar-fill mp-bar" id="bar-mp" style="width:100%"></div>
+            </div>
+            <span class="bar-val" id="val-mp"></span>
+          </div>
+
+          <!-- Production progress (mirrors StatusPane.SetProgress) -->
+          <div class="bar-row" id="row-prod" style="display:none">
+            <span class="bar-label">PROD</span>
+            <div class="bar-track">
+              <div class="bar-fill prod-bar" id="bar-prod" style="width:0%"></div>
+            </div>
+            <span class="bar-val" id="val-prod"></span>
+          </div>
+
+          <div id="unit-stats">
+            <span class="stat-k">ATK</span><span class="stat-v" id="s-atk">—</span>
+            &nbsp;
+            <span class="stat-k">RNG</span><span class="stat-v" id="s-rng">—</span>
+            &nbsp;
+            <span class="stat-k">ST</span><span class="stat-v" id="s-state">—</span>
+          </div>
+
+          <div id="pane-desc"></div>
+        </div>
+      </div>
+
+      <!-- Group selection (multiple units) -->
+      <div id="pane-group"></div>
+
+    </div>
+
+    <!-- RIGHT: Command Card 3×3 (Warcraft's GameButton grid) -->
+    <div id="cmd-card">
+      <div id="cmd-grid">
+        <!-- 9 slots, JS fills them via fillCmdCard() -->
+        <button class="cmd-btn cmd-empty" id="cmd-0"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-1"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-2"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-3"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-4"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-5"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-6"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-7"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+        <button class="cmd-btn cmd-empty" id="cmd-8"><span class="hotkey"></span><span class="cmd-icon"></span><span class="cmd-label"></span></button>
+      </div>
+    </div>
+
+  </div><!-- #hud -->
+
+  <!-- ══════════════════════════════════════════════════════
+       LOBBY — CRT terminal race/map select screen
+       ══════════════════════════════════════════════════════ -->
+  <div id="lobby">
+    <!-- scanlines/vignette overlay — must be OUTSIDE lobby-inner so it doesn't affect grid -->
+    <div id="crt-vignette"></div>
+
+    <div id="lobby-inner">
+
+      <!-- ── Title bar ── -->
+      <div id="ltitle-bar">
+        <span id="ltitle-sys">SYS://TENTCRAFT.EXE &nbsp; v0.9.1-ALPHA &nbsp; [PRESS ANY KEY... JK, CHOOSE A SIDE]</span>
+        <span id="ltitle-blink">_</span>
+      </div>
+
+      <div id="ltitle-main">
+        <div id="ltitle-sub">// CLASSIFIED · A GAME OF SURVIVAL &amp; CONTROL //</div>
+        <h1 id="ltitle-h1" data-text="TENT CITY CRAFT">TENT CITY CRAFT</h1>
+        <div id="ltitle-rule">▓▓▓▓▓▓▓▓▓▓&nbsp; THE GREAT DIVIDE &nbsp;▓▓▓▓▓▓▓▓▓▓</div>
+      </div>
+
+      <!-- ── Main content: 3 columns ── -->
+      <div id="lmain-grid">
+
+        <!-- LEFT: SCAVENGERS -->
+        <div class="lfac" id="lfac-scav" onclick="lobbyChoose('scav')">
+          <div class="lfac-head scav-head">
+            <span class="lfac-tag">[FACTION-01]</span>
+            <span class="lfac-class">HAVE-NOTS</span>
+          </div>
+          <div class="lfac-name scav-name">THE SCAVENGERS</div>
+          <div class="lfac-lore">
+            Evicted. Resilient.<br>
+            Resourceful. Scrap the ruins.<br>
+            Build from nothing.<br>
+            The dumps are your gold mines.
+          </div>
+          <div class="lfac-divider">── COMBAT ROSTER ─────────────</div>
+          <div class="lfac-units">
+            <div class="lunit"><span class="lu-key">[W]</span> WORKER &nbsp;&nbsp;&nbsp; <span class="lu-name">The Scavenger</span></div>
+            <div class="lunit"><span class="lu-key">[1]</span> INFANTRY &nbsp; <span class="lu-name">The Hooded</span></div>
+            <div class="lunit"><span class="lu-key">[2]</span> RANGED &nbsp;&nbsp;&nbsp; <span class="lu-name">The Slinger</span></div>
+            <div class="lunit"><span class="lu-key">[3]</span> HEAVY &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">The Brute</span></div>
+            <div class="lunit"><span class="lu-key">[4]</span> SIEGE &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Fire-Eater</span></div>
+            <div class="lunit"><span class="lu-key">[T]</span> TOWER &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Junk Turret</span></div>
+          </div>
+          <div class="lfac-divider">── ECONOMY ────────────────────</div>
+          <div class="lfac-econ"><span class="lecon-scav">♻ SCRAP</span> &nbsp;←&nbsp; DUMPS &nbsp;|&nbsp; <span class="lecon-salv">⚙ SALVAGE</span> ←&nbsp; CAFES</div>
+          <div class="lfac-sel scav-sel" id="sel-scav">▶ SELECT FACTION ◀</div>
+        </div>
+
+        <!-- CENTER: MAP SELECT -->
+        <div id="lmap-panel">
+          <div class="lfac-head" style="border-color:#4a3a2a">
+            <span class="lfac-tag">[MAP-SELECT]</span>
+            <span class="lfac-class">THEATRE OF WAR</span>
+          </div>
+
+          <div id="lmap-nav">
+            <button class="lmap-btn" onclick="mapNav(-1)">◄ PREV</button>
+            <span id="lmap-counter">MAP 1 / 3</span>
+            <button class="lmap-btn" onclick="mapNav(1)">NEXT ►</button>
+          </div>
+
+          <canvas id="lobby-map" width="220" height="180"></canvas>
+
+          <div id="lmap-info">
+            <div id="lmap-name">THE GREAT DIVIDE</div>
+            <div id="lmap-stats">1v1 · STANDARD · 64×64 SECTORS</div>
+            <div id="lmap-desc-text">"Trash wastes divide two factions.<br>No neutral ground. No mercy."</div>
+          </div>
+
+          <div id="lmap-list">
+            <div class="lmap-entry active" id="mentry-0" onclick="selectMap(0)">►&nbsp;THE GREAT DIVIDE &nbsp;<span class="mstatus avail">[AVAILABLE]</span></div>
+            <div class="lmap-entry"        id="mentry-1" onclick="selectMap(1)">&nbsp;&nbsp;LANDFILL CIRCUIT &nbsp;<span class="mstatus locked">[LOCKED]</span></div>
+            <div class="lmap-entry"        id="mentry-2" onclick="selectMap(2)">&nbsp;&nbsp;THE BREADLINE&nbsp;&nbsp;&nbsp; &nbsp;<span class="mstatus locked">[LOCKED]</span></div>
+          </div>
+
+          <div id="lmap-legend">
+            <span class="leg-scav">■ SCAV</span> &nbsp;
+            <span class="leg-gild">■ GILD</span> &nbsp;
+            <span class="leg-dump">◆ DUMP</span> &nbsp;
+            <span class="leg-cafe">◆ CAFE</span>
+          </div>
+        </div>
+
+        <!-- RIGHT: GILDED -->
+        <div class="lfac" id="lfac-gild" onclick="lobbyChoose('gild')">
+          <div class="lfac-head gild-head">
+            <span class="lfac-tag">[FACTION-02]</span>
+            <span class="lfac-class">HAVES</span>
+          </div>
+          <div class="lfac-name gild-name">THE GILDED</div>
+          <div class="lfac-lore">
+            Gated. Wealthy. Ruthless.<br>
+            Send Assistants to the Cafes.<br>
+            Buy Enforcers.<br>
+            Keep them out.
+          </div>
+          <div class="lfac-divider">── COMBAT ROSTER ─────────────</div>
+          <div class="lfac-units">
+            <div class="lunit"><span class="lu-key">[W]</span> WORKER &nbsp;&nbsp;&nbsp; <span class="lu-name">The Assistant</span></div>
+            <div class="lunit"><span class="lu-key">[1]</span> INFANTRY &nbsp; <span class="lu-name">The Enforcer</span></div>
+            <div class="lunit"><span class="lu-key">[2]</span> RANGED &nbsp;&nbsp;&nbsp; <span class="lu-name">Tactical Guard</span></div>
+            <div class="lunit"><span class="lu-key">[3]</span> HEAVY &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">The Bodyguard</span></div>
+            <div class="lunit"><span class="lu-key">[4]</span> SIEGE &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Cancel Drone</span></div>
+            <div class="lunit"><span class="lu-key">[T]</span> TOWER &nbsp;&nbsp;&nbsp;&nbsp; <span class="lu-name">Microwave Emitter</span></div>
+          </div>
+          <div class="lfac-divider">── ECONOMY ────────────────────</div>
+          <div class="lfac-econ"><span class="lecon-salv">⚙ SALVAGE</span> ←&nbsp; CAFES &nbsp;|&nbsp; <span class="lecon-scav">♻ SCRAP</span> &nbsp;←&nbsp; DUMPS</div>
+          <div class="lfac-sel gild-sel" id="sel-gild">▶ SELECT FACTION ◀</div>
+        </div>
+
+      </div><!-- #lmain-grid -->
+
+      <!-- ── Status / deploy bar ── -->
+      <div id="ldeploy-bar">
+        <div id="ldeploy-status">
+          <span id="ldeploy-fac-label">&nbsp;</span>
+          <span id="ldeploy-map-label">&nbsp;</span>
+        </div>
+        <button id="deploy-btn" disabled onclick="lobbyStart()">
+          ▶&nbsp;&nbsp;DEPLOY&nbsp;&nbsp;◀
+        </button>
+      </div>
+
+    </div><!-- #lobby-inner -->
+  </div><!-- #lobby -->
+
+  <!-- Three.js importmap + entry point -->
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js"}}
+  </script>
+  <script type="module" src="js/main.js"></script>
+
+  <!-- Lobby interaction -->
+  <script>
+    let _lobbyFac = null;
+    let _lobbyMap = 0;
+
+    const MAPS = [
+      {
+        name: 'THE GREAT DIVIDE',
+        stats: '1v1 · STANDARD · 64×64 SECTORS',
+        desc: '"Trash wastes divide two factions.<br>No neutral ground. No mercy."',
+        available: true,
+      },
+      {
+        name: 'LANDFILL CIRCUIT',
+        stats: '1v1 · CONTESTED · 96×96 SECTORS',
+        desc: '"Three landfills. Six approaches.<br>The circuit never sleeps."',
+        available: false,
+      },
+      {
+        name: 'THE BREADLINE',
+        stats: '1v1 · ECONOMIC · 64×96 SECTORS',
+        desc: '"Control the queue or starve.<br>Resources cluster at the center."',
+        available: false,
+      },
+    ];
+
+    function lobbyChoose(fac) {
+      _lobbyFac = fac;
+      document.querySelectorAll('.lfac').forEach(c => c.classList.remove('selected'));
+      document.getElementById('lfac-' + fac).classList.add('selected');
+      _refreshStatus();
+      drawLobbyMap(fac);
+    }
+
+    function mapNav(dir) {
+      _lobbyMap = (_lobbyMap + dir + MAPS.length) % MAPS.length;
+      selectMap(_lobbyMap);
+    }
+
+    // Map entry prefix characters stored separately so innerHTML isn't corrupted
+    const MAP_LABELS = [
+      'THE GREAT DIVIDE',
+      'LANDFILL CIRCUIT',
+      'THE BREADLINE&nbsp;&nbsp;&nbsp;',
+    ];
+    const MAP_STATUS = [
+      '<span class="mstatus avail">[AVAILABLE]</span>',
+      '<span class="mstatus locked">[LOCKED]</span>',
+      '<span class="mstatus locked">[LOCKED]</span>',
+    ];
+
+    function selectMap(idx) {
+      _lobbyMap = idx;
+      document.querySelectorAll('.lmap-entry').forEach((e, i) => {
+        e.classList.toggle('active', i === idx);
+        const prefix = i === idx ? '►&nbsp;' : '&nbsp;&nbsp;';
+        e.innerHTML = `${prefix}${MAP_LABELS[i]}&nbsp;${MAP_STATUS[i]}`;
+      });
+      const m = MAPS[idx];
+      document.getElementById('lmap-name').textContent = m.name;
+      document.getElementById('lmap-stats').textContent = m.stats;
+      document.getElementById('lmap-desc-text').innerHTML = m.desc;
+      document.getElementById('lmap-counter').textContent = `MAP ${idx+1} / ${MAPS.length}`;
+      drawLobbyMap(_lobbyFac || 'scav');
+      _refreshStatus();
+    }
+
+    function _refreshStatus() {
+      const fLabel = document.getElementById('ldeploy-fac-label');
+      const mLabel = document.getElementById('ldeploy-map-label');
+      const btn    = document.getElementById('deploy-btn');
+      const map    = MAPS[_lobbyMap];
+
+      fLabel.textContent = _lobbyFac
+        ? `FACTION: ${_lobbyFac === 'scav' ? 'THE SCAVENGERS' : 'THE GILDED'}`
+        : 'FACTION: --SELECT--';
+      mLabel.textContent = `MAP: ${map.available ? map.name : map.name + ' [LOCKED]'}`;
+
+      btn.disabled = !(_lobbyFac && map.available);
+    }
+
+    function lobbyStart() {
+      if (!_lobbyFac || !MAPS[_lobbyMap].available) return;
+      const key = _lobbyFac === 'gild' ? 'GILD' : 'SCAV';
+      if (window._startGame && window._FAC) window._startGame(window._FAC[key]);
+    }
+
+    /* ── Map preview canvas ── */
+    function drawLobbyMap(chosenFac) {
+      const cv  = document.getElementById('lobby-map');
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+
+      // Black base
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      if (_lobbyMap === 0) {
+        _drawMapDivide(ctx, W, H, chosenFac || 'scav');
+      } else {
+        // Locked map placeholder
+        ctx.fillStyle = '#0a0804';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#2a2018';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('[ ACCESS DENIED ]', W/2, H/2 - 8);
+        ctx.fillText('CLASSIFICATION: LOCKED', W/2, H/2 + 8);
+      }
+
+      // CRT scanline overlay on canvas
+      for (let y = 0; y < H; y += 2) {
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(0, y, W, 1);
+      }
+
+      // Border
+      ctx.strokeStyle = '#4a3a1a';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0, 0, W, H);
+    }
+
+    function _drawMapDivide(ctx, W, H, chosenFac) {
+      // Terrain base — scav side warmer, gild side cooler
+      ctx.fillStyle = '#120d06'; ctx.fillRect(0, 0, W * 0.60, H);
+      ctx.fillStyle = '#080d18'; ctx.fillRect(W * 0.60, 0, W, H);
+
+      // Trash blobs (dark brown filled ellipses)
+      ctx.fillStyle = '#1e1408';
+      const blobs = [
+        [W*.22,H*.15,20,7],[W*.50,H*.12,24,7],[W*.78,H*.15,20,7],
+        [W*.22,H*.85,20,7],[W*.50,H*.88,24,7],[W*.78,H*.85,20,7],
+        [W*.12,H*.36,18,9],[W*.12,H*.64,18,9],
+        [W*.88,H*.36,16,8],[W*.88,H*.64,16,8],
+        [W*.50,H*.36,11,6],[W*.50,H*.64,11,6],
+      ];
+      for (const [cx,cy,rx,ry] of blobs) {
+        ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.fill();
+      }
+
+      // Main roads (dirt paths)
+      ctx.strokeStyle = 'rgba(90,68,30,0.55)'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(W*.10,H*.50); ctx.lineTo(W*.90,H*.50); ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(W*.50,H*.10); ctx.lineTo(W*.50,H*.90); ctx.stroke();
+
+      // Divide line
+      ctx.strokeStyle = '#5c3aaa'; ctx.lineWidth = 1;
+      ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(W*.60,2); ctx.lineTo(W*.60,H-2); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Resource nodes: dumps (yellow), cafes (amber)
+      const dumps = [[W*.10,H*.50],[W*.22,H*.37],[W*.22,H*.63],[W*.40,H*.50],[W*.40,H*.32],[W*.40,H*.68],[W*.11,H*.12],[W*.11,H*.88]];
+      ctx.fillStyle = '#d4a017';
+      for (const [x,y] of dumps) { ctx.fillRect(x-3,y-3,6,6); }
+
+      const cafes = [[W*.90,H*.50],[W*.68,H*.37],[W*.68,H*.63],[W*.34,H*.37],[W*.34,H*.63]];
+      ctx.fillStyle = '#c07020';
+      for (const [x,y] of cafes) { ctx.fillRect(x-3,y-3,6,6); }
+
+      // Player starts
+      const pCol = chosenFac === 'scav' ? '#e05010' : '#2080d0';
+      const aCol = chosenFac === 'scav' ? '#2080d0' : '#e05010';
+      ctx.fillStyle = pCol; ctx.fillRect(W*.08-5, H*.50-5, 10, 10);
+      ctx.fillStyle = aCol; ctx.fillRect(W*.88-5, H*.50-5, 10, 10);
+
+      // Pixel glow on player starts
+      ctx.strokeStyle = pCol; ctx.lineWidth = 1;
+      ctx.strokeRect(W*.08-7, H*.50-7, 14, 14);
+      ctx.strokeStyle = aCol;
+      ctx.strokeRect(W*.88-7, H*.50-7, 14, 14);
+    }
+
+    // Cursor blink
+    setInterval(() => {
+      const b = document.getElementById('ltitle-blink');
+      if (b) b.style.visibility = b.style.visibility === 'hidden' ? 'visible' : 'hidden';
+    }, 530);
+
+    window.addEventListener('load', () => {
+      drawLobbyMap('scav');
+      _refreshStatus();
+    });
+  </script>
+
+</body>
+</html>
