@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { UNIT_DEFS, FAC, COL, TILE } from './constants.js';
+import { config } from './config.js';
 import { G, getRes } from './state.js';
 import { Entity } from './entities.js';
 import { createUnitMesh, spawnParticles, syncMeshes, spawnProjectile, spawnHitFlash,
@@ -299,9 +300,11 @@ export function updateUnit(ent, dt) {
       if (gEnemy) { ent.targetEnt = gEnemy; ent.state = 'attacking'; break; }
 
       if (moveToward(ent, res.x, res.z, 3.5, dt)) {
-        ent.carriedRes    = ent.carryMax;
+        const yieldMult   = config.mapDef?.workerYield ?? 1;
+        const haul        = ent.carryMax * yieldMult;
+        ent.carriedRes    = haul;
         ent.carriedType   = (res.subtype === 'deptstore' || res.subtype === 'cafe') ? 'salvage' : 'scrap';
-        res.damage(ent.carryMax);
+        res.damage(haul);
         ent.state = 'returning';
         sfxGather();
       }

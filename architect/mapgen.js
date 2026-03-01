@@ -476,3 +476,43 @@ export function generateFrozenSiege(w, h, seed = 6060) {
 
   return smoothed;
 }
+
+// ── NO MAN'S LAND (1v1 brawl) ────────────────────────────
+// Flat open arena. NO TRASH tiles anywhere — workers only
+// go to the dump nodes in the centre, never the walls.
+export function generateNoMansLand(w, h, seed) {
+  const rng = mulberry32(seed);
+  // Start with all CONCRETE — clean slate
+  const tiles = new Uint8Array(w * h).fill(T.CONCRETE);
+
+  // Light cracked-asphalt scatter for visual texture only
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (rng() < 0.22) tiles[y * w + x] = T.CRACKED;
+
+  // Rubble border wall — solid impassable ring, NOT harvestable
+  _fillRect(tiles, w, 0, 0,   w, 3,   T.RUBBLE);
+  _fillRect(tiles, w, 0, h-3, w, h,   T.RUBBLE);
+  _fillRect(tiles, w, 0, 0,   3, h,   T.RUBBLE);
+  _fillRect(tiles, w, w-3, 0, w, h,   T.RUBBLE);
+
+  // Small rubble cover pillars mid-field — soldiers can fight around them
+  const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+  const covers = [
+    [cx - 18, cy - 12], [cx + 18, cy - 12],
+    [cx - 18, cy + 12], [cx + 18, cy + 12],
+    [cx,      cy - 24], [cx,      cy + 24],
+    [cx - 30, cy],      [cx + 30, cy],
+  ];
+  for (const [px, py] of covers)
+    _fillRect(tiles, w, px - 2, py - 2, px + 3, py + 3, T.RUBBLE);
+
+  // Clear wide safe zones around each base
+  _clearCircle(tiles, w, 14,     cy, 20, T.CONCRETE);
+  _clearCircle(tiles, w, w - 14, cy, 20, T.CONCRETE);
+
+  // Clear the dump cluster zone
+  _clearCircle(tiles, w, cx, cy, 16, T.CONCRETE);
+
+  return tiles;
+}

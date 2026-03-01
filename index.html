@@ -318,27 +318,27 @@
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js",
-      "./js/main.js":        "./js/main.js?v=19",
-      "./js/sfx.js":         "./js/sfx.js?v=19",
-      "./js/units.js":       "./js/units.js?v=19",
-      "./js/buildings.js":   "./js/buildings.js?v=19",
-      "./js/renderer.js":    "./js/renderer.js?v=19",
-      "./js/input.js":       "./js/input.js?v=19",
-      "./js/ui.js":          "./js/ui.js?v=19",
-      "./js/ai.js":          "./js/ai.js?v=19",
-      "./js/constants.js":   "./js/constants.js?v=19",
-      "./js/state.js":       "./js/state.js?v=19",
-      "./js/entities.js":    "./js/entities.js?v=19",
-      "./js/world.js":       "./js/world.js?v=19",
-      "./js/terrain.js":     "./js/terrain.js?v=19",
-      "./js/navmesh.js":     "./js/navmesh.js?v=19",
-      "./js/pathfinding.js": "./js/pathfinding.js?v=19",
-      "./js/config.js":      "./js/config.js?v=19",
-      "./js/resources.js":   "./js/resources.js?v=19"
+      "./js/main.js":        "./js/main.js?v=25",
+      "./js/sfx.js":         "./js/sfx.js?v=25",
+      "./js/units.js":       "./js/units.js?v=25",
+      "./js/buildings.js":   "./js/buildings.js?v=25",
+      "./js/renderer.js":    "./js/renderer.js?v=25",
+      "./js/input.js":       "./js/input.js?v=25",
+      "./js/ui.js":          "./js/ui.js?v=25",
+      "./js/ai.js":          "./js/ai.js?v=25",
+      "./js/constants.js":   "./js/constants.js?v=25",
+      "./js/state.js":       "./js/state.js?v=25",
+      "./js/entities.js":    "./js/entities.js?v=25",
+      "./js/world.js":       "./js/world.js?v=25",
+      "./js/terrain.js":     "./js/terrain.js?v=25",
+      "./js/navmesh.js":     "./js/navmesh.js?v=25",
+      "./js/pathfinding.js": "./js/pathfinding.js?v=25",
+      "./js/config.js":      "./js/config.js?v=25",
+      "./js/resources.js":   "./js/resources.js?v=25"
     }
   }
   </script>
-  <script type="module" src="js/main.js?v=19"></script>
+  <script type="module" src="js/main.js?v=25"></script>
 
   <!-- Zoom + SFX volume controls (called from HUD buttons) -->
   <script>
@@ -358,12 +358,13 @@
 
     // Must stay in sync with ALL_MAPS order in maps/index.js
     const MAPS = [
-      { name: 'THE GREAT DIVIDE',  stats: '1v1 · STANDARD',      available: true  },  // 0
-      { name: 'LANDFILL CIRCUIT',  stats: '1v1 · CONTESTED',      available: false },  // 1
-      { name: 'THE BREADLINE',     stats: '1v1 · ECONOMIC',       available: false },  // 2
-      { name: 'KABOOM BNE',        stats: '2–4P · SYMMETRICAL',   available: true  },  // 3
-      { name: 'THE OVERFLOW',      stats: '1v1 · RESOURCE RICH',  available: true  },  // 4
-      { name: 'FROZEN SIEGE',      stats: '1v1 · WINTER · BRIDGE', available: true  },  // 5
+      { name: 'THE GREAT DIVIDE',  stats: '1v1 · STANDARD',        available: true  },  // 0
+      { name: 'NO MAN\'S LAND',    stats: '1v1 · ALL-IN · 80×80',  available: true  },  // 1
+      { name: 'LANDFILL CIRCUIT',  stats: '1v1 · CONTESTED',        available: false },  // 2
+      { name: 'THE BREADLINE',     stats: '1v1 · ECONOMIC',         available: false },  // 3
+      { name: 'KABOOM BNE',        stats: '2–4P · SYMMETRICAL',     available: true  },  // 4
+      { name: 'THE OVERFLOW',      stats: '1v1 · RESOURCE RICH',    available: true  },  // 5
+      { name: 'FROZEN SIEGE',      stats: '1v1 · WINTER · BRIDGE',  available: true  },  // 6
     ];
 
     function lobbyChoose(fac) {

@@ -99,7 +99,7 @@ export const BLDG_DEFS = {
   hq: {
     hp: 1600, size: 4, cost: [0, 0], buildTime: 0, foodAdd: 4,
     label: ['The Squat', 'The Gated Manor'],
-    produces: ['worker', 'transport'],
+    produces: ['worker'],
     requires: [],
   },
   housing: {
@@ -117,7 +117,7 @@ export const BLDG_DEFS = {
   upgrade: {
     hp: 800, size: 3, cost: [500, 150], buildTime: 8, foodAdd: 0,
     label: ['The Chop Shop', 'Design Studio'],
-    produces: ['heavy'],
+    produces: ['heavy', 'transport'],
     requires: ['barracks'],   // needs a completed Mess Hall / Security HQ
   },
   tower: {
@@ -226,7 +226,7 @@ export const UNIT_DESCS = {
   hq:        'Your base of operations. Destroy the enemy HQ to win.',
   housing:   'Increases population cap by +4.',
   barracks:  'Trains combat units: Infantry, Ranged, Siege.',
-  upgrade:   'Trains heavy units: The Toyota.',
+  upgrade:   'Trains heavy units: The Toyota & The Sprinter transport.',
   tower:     'Auto-fires at approaching enemies. Passive defense.',
   magic:     'Trains Hackers and unlocks advanced abilities.',
   dump:      'Abandoned waste site. Workers gather Scrap here. Each trip yields 20 Scrap.',
